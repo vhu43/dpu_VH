@@ -1,0 +1,67 @@
+"""Template to help non-coders with new fit functions
+
+Give a description of the fit you are using here. Replace all instances of
+"raise NotImplementedError("STUFF")" with an implementation of the method to
+make your own fit class. Valid fits are automatically populated but be sure
+to name the class using a capitalized version of the file name (i.e. Template
+for the class name and template.py as the file name)
+"""
+
+from . import fit
+import numpy as np
+
+class Template(fit.Fit):
+  """template extending Fit class to implement curve fitting operations
+
+  short description of the fit you are using
+
+  Attributes:
+    parameters: A tuple containing the parameters to fit with
+  """
+  _NUM_PARAMS = -1 # Specify the number of parameters your model uses
+  _EQ_STRING = "" # Specify a terminal-printable string of the equation
+  _LATEX_STRING = "" # Specify a latex-compatible encoding for pretty printing
+
+  @classmethod
+  def equation(cls, x, a): # Add variables for parameters. Specify model eq here
+    """Returns the result of the equation of the model"""
+    del a # Use this to delete parameters that you don"t use
+    x = np.array(x) # Keep this line
+    raise NotImplementedError("Subclasses should implement the fit equation")
+
+  @classmethod
+  def inverse(cls, y, a): # Specify inverse eq here
+    """Returns the result of the inverse equation of the model"""
+    del a # Use this to delete parameters that you don"t use
+    y = np.array(y) # Keep this line
+
+    raise NotImplementedError("Subclass should implement inversion for runtime")
+
+  @classmethod
+  def grad(cls, x, a): # Specify partial derivatives here
+    """Returns the gradient of the log equation"""
+    x = np.array(x) # Keep this line
+    del_a = a #Input the partial derivatives here. Add more variables if needed
+    return np.stack([del_a]).reshape(cls._NUM_PARAMS, 1, -1)
+
+  @classmethod
+  def get_bounds(cls, x, y):
+    """Defines bounds to try to fit the curve fitting"""
+    x = np.array(x) # Keep this line if you will use x
+    y = np.array(y) # Keep this line if you will use y
+    del x, y # Use this line to delete variables you aren"t using
+
+    raise NotImplementedError("Subclasses should implement Bounds for fit")
+
+    # return (-np.inf, np.inf) #Use this return value if there are no bounds
+
+  @classmethod
+  def get_initial_values(cls, x, y):
+    """Returns initial guess for parameters"""
+    x = np.array(x) # Keep this line if you will use x
+    y = np.array(y) # Keep this line if you will use y
+    del x, y # Use this line to delete variables you aren"t using
+
+    raise NotImplementedError("Subclasses should implement initial values")
+
+    # return((0, 0)) #use this return value to initialize to 0

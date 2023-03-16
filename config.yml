@@ -1,0 +1,84 @@
+{
+  # Vials that are in use
+  'VIALS' : [0,1,2,3,4,5,6,7],
+  # if using a different mode, name your function as the OPERATION_MODE variable
+  'OPERATION_MODE' : 'morbidostat',
+
+
+  'EVOLVER_IP' : '10.0.0.3',
+  'EVOLVER_PORT' : 8081,
+
+  ##### Define initial values for temperature, stirring, power settings, volume
+
+  'TEMP_INITIAL' : [30,30,30,30,30,30,30,30,30,30,30,30,30,30,30,30], #degrees C
+  'STIR_INITIAL' : [9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9],
+  'POWER_INITIAL' : [4095,4095,4095,4095,4095,4095,4095,4095,4095,4095,4095,4095,4095,4095,4095,4095],
+
+  ##### Define calibration file for pump calibration
+  'VOLUME' :  30, #mL, determined by vial cap straw length
+  'PUMP_CAL_FILE' : 'pump_cal.txt', #tab delimited, mL/s with 16 influx pumps on first row, etc.
+
+  ##### Email parameters
+  'RECEIVER_EMAIL' : 'h.t.hobbs@gmail.com',
+
+  ##### End of global parameters #####
+
+
+  ##### Morbidostat parameters #####
+  'morbidostat' : {
+    # Global paramemters for PID
+    'INITIAL_WAIT' : 1,                            # hours, time for initial growth
+    'DILUTION_OD' : 0.4,                           # OD at which dilutions start occurring
+    'MAX_OD' : 1.5,                                # High OD safeguard to prevent culture from leaving linear range
+    'SUPER_OD' : 2.0,                              # Extra high OD safeguard to prevent culture from leaving linear range
+    'DOUBLING_TIME' : 6.0,                         # User defined target doubling time
+    'STEPS_PER_HOUR' : 2,                          # User defined number of dilution events per hour. Volumes are adjusted accordingly
+
+    # PID Parameters
+    # Kp, Ki, Kd may need to be changed for different selections
+    'Kp' :         [0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7,  0.7  ],
+    'Ki' :         [0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05 ],
+    'Kd' :         [0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2,  0.2  ],
+    'pid_offset' : [0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0  ],
+  },
+  
+
+  ##### Turbidostat parameters #####
+  'turbidostat' : {
+    'n_curves' : 0,      #set to 0 to never stop, or a natural integer value to stop diluting after certain number of growth curves
+    'OD_values_to_average' : 6,     # Number of values to calculate the OD average
+
+    'lower_thresh' : [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    'upper_thresh' : [4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4],
+
+
+    ##### Turbidostat Settings #####
+    #Tunable settings for overflow protection, pump scheduling etc. Unlikely to change between expts
+
+    'time_out' : 5, #(sec) additional amount of time to run efflux pump
+    'pump_wait' : 3, # (min) minimum amount of time to wait between pump events
+
+    ##### End of Turbidostat Settings #####
+  },
+
+
+  ##### Chemostat parameters #####
+  'chemostat' : {
+    'start_OD' : 0, # ~OD600, set to 0 to start chemostate dilutions at any positive OD
+    'start_time' : 0, #hours, set 0 to start immediately
+    # Note that script uses AND logic, so both start time and start OD must be surpassed
+
+    'OD_values_to_average' : 6,  # Number of values to calculate the OD average
+
+    'rate_config' : [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+    #UNITS of 1/hr, NOT mL/hr, rate : flowrate/volume, so dilution rate ~ growth rate, set to 0 for unused vials
+
+
+    ##### Chemostat Settings #####
+
+    #Tunable settings for bolus, etc. Unlikely to change between expts
+    'bolus' : 0.5, #mL, can be changed with great caution, 0.2 is absolute minimum
+
+    ##### End of Chemostat Settings #####
+  },
+}

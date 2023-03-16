@@ -1,0 +1,133 @@
+---
+# A configuration file for running the evolver.
+### Required configuration section. Likely need to be checked for every run
+
+## List all vials you wish to handle with this configuration. Begin with 0
+vials: [0, 1, 2, 3]
+
+# If you only list a singular value, it will copy them to all valid vials
+volume: 30 # mL
+OD_values_to_average: 6 # Number of values to calculate the OD average
+
+## OPTIONAL if all vials are handled by one type of bioreactor, list here
+# If not all one mode, comment out this field and look below
+mode: "morbidostat"
+
+## Define initial values for temperature, stiring, LED power, and volume.
+# If you only list a singular value, it will copy them to all valid vials
+temp: 30 # Celcius
+stir: 8 # machine stir rate unit
+power: 4095 # Do not touch unless you needed for your od calibration
+
+
+## Input start delay and runtime for your experiment
+# If you only list a singular value, it will copy them to all valid vials
+start_delays: 0 # Hours. Set to 0 for no delay
+durations: 0 # Hours. Set to 0 for infinite duration
+
+## OPTIONAL if you wish to use a specific calibration file, input paths here
+# Will obtain from evolver active calibrations if none
+pump_cal: None
+temp_cal: None
+od_cal: None
+
+## OPTIONAL if you wish to be notified of certain alerts by email, do so here
+receiver_email: "email@domain.com"
+
+## OPTIONAL fluid tracking and alerting can be set here. Uncomment to use
+# Input fluids as the following:
+#   <name>:
+#     vol: <volume>
+#     <pump>: [<vials>]
+fluids:
+  - name: w_dropout_selective # Namespace are unique, so choose unique names on unshared media
+    vol: 5000    # mL. Total starting volume
+    in1: [1, 2, 3]
+    in2: None
+
+##### Morbidostat parameters #####
+morbidostat:
+  # Can optionally define which vials are run in this mode.
+  # This will supercede the mode selection above
+  # vials: None
+
+  # User defined target doubling time
+  # If you only list a singular value, it will copy them to all valid vials
+  DOUBLING_TIME: 6.0
+
+  # Set OD thresholds.
+  # If you only list a singular value, it will copy them to all valid vials
+  lower_thresh: 0.4
+  upper_thresh: 1.5
+
+  # drug input dictionary, defining drug source and input
+  drug_source: in1
+  # Set drug ratio limits.
+  # use 0 and 1 if drug_source is a pump
+  drug_low: 0
+  drug_high: 1
+
+  # number of dilution events per hour. Volumes are adjusted accordingly
+  # If you only list a singular value, it will copy them to all valid vials
+  control_rate: 2 # dilutions/hr
+
+  # Setting open to future controller updates
+  controllers:
+    # PID Parameters
+    # Kp, Ki, Kd may need to be changed for different selections
+    # If you only list a singular value, it will copy them to all valid vials
+    - type: pid
+      Kp: 0.7
+      Ki: 0.5
+      Kd: 0.2
+
+##### Turbidostat parameters #####
+turbidostat:
+  # Can optionally define which vials are run in this mode.
+  # This will supercede the mode selection above
+  # vials: None
+
+  # Set how many dilutions to do before stopping
+  # set to 0 to never stop
+  n_cycles: 0
+
+  # Set OD thresholds.
+  # If you only list a singular value, it will copy them to all valid vials
+  lower_thresh: 1
+  upper_thresh: 4
+
+  ##### Turbidostat Settings #####
+  #Tunable settings for overflow protection, pump scheduling etc.
+  # Dilution steps to take when diluting (saves on media)
+  n_dilution_steps: 6
+
+  # Set the ratio of inflow pumps when pumping.
+  # If None, will assume all inflow occurs through in1
+  # If you only list a singular value, it will copy them to all valid vials
+  pump_ratios: None
+
+  ##### End of Turbidostat Settings #####
+
+### Chemostat parameters ###
+chemostat:
+  # can optionally define which vials are run in this mode
+  # This will supercede the mode selection above
+  # vials: None
+
+  # script uses AND logic, so both start time and start OD must be surpassed
+  start_OD: 0, # ~OD600
+
+  ### Chemostat Settings ###
+
+  # Set the ratio of inflow pumps when pumping.
+  # If None, will assume all inflow occurs through in1
+  pump_ratios: None
+
+  # UNITS of dilutions/hr, NOT mL/hr
+  # If you only list a singular value, it will copy them to all valid vials
+  rates: 0.5 # dilutions/hr
+
+  # bolus volume in mL. Change with great caution, 0.2 is absolute minimum
+  bolus: 0.5 # mL
+  ### End of Chemostat Settings ###
+...
