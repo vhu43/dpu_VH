@@ -11,9 +11,10 @@ from evolver_manager.utils import config_utils
 from evolver_manager import bioreactors
 import socketio
 import daemon
+import global_config
 
 DEFAULT_PORT = 60888
-LOG_DIR = "."
+LOG_DIR = global_config.log_dir
 URL = "localhost"
 DAEMON = "summon_daemon.py"
 BAR_CHAR = "\U00002501"
@@ -31,8 +32,10 @@ def main():
   configuration to the daemon, and finally communicates the state of the
   experimental setup at start.
   """
-  working_directory = "test_dir"
-  name = "test_exp"
+  arguments = get_options()
+
+  working_directory = arguments.path
+  name = arguments.exp_name
 
   # Tries to start a evolver manager daemon. If this daemon exits with the
   # existing daemon exit code, then notify the experimenter that said daemon
@@ -42,7 +45,7 @@ def main():
     kwargs.update(creationflags=DETATCHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
   else:
     kwargs.update(start_new_session=True)
-  daemon_cmd = [sys.executable, DAEMON, URL, str(DEFAULT_PORT), LOG_DIR, True]
+  daemon_cmd = [sys.executable, DAEMON, "-d", URL, str(DEFAULT_PORT), LOG_DIR]
   print(BAR_CHAR * os.get_terminal_size().columns)
   print("Daemon:")
   daemon_p = subprocess.Popen(daemon_cmd, stdout=subprocess.PIPE, **kwargs)
@@ -56,13 +59,18 @@ def main():
     print(f"  {line}")
   print(f"\n{BAR_CHAR * os.get_terminal_size().columns}")
 
+  # Sending expeirment config to daemon to handle as an experiment
   print("Building experiment configs to send to manager...", end="")
+  for filename in global_config.CONFIG_FILENAMES:
+    config_file = Path(working_directory, filename)
+    if config_file.is_file():
+      break
   try:
-    config_file = Path(working_directory, "config.yaml")
     with open(config_file, encoding="utf8") as f:
       config = yaml.safe_load(f)
+    # TODO Create function to make evolver vial sorting automatic
     commands, modes, fluids = config_utils.encode_start(
-      name, working_directory, config)
+      name, working_directory, config, "10.0.0.3", 8081)
   except socketio.exceptions.ConnectionError as inst:
     print("Unable to connect to the evolver to obtain calibration:")
     print(f"\t{inst.args[0]}")
@@ -99,9 +107,13 @@ def get_options():
   description = "Run an eVOLVER experiment from the command line"
   parser = argparse.ArgumentParser(description=description)
 
-  parser.add_argument("exp_name", metavar="Experiment Name", action="store",
+  parser.add_argument("exp_name", metavar="Experiment_Name", action="store",
                       help=("Enter the name of the experiment you are aiming to"
                             "Start in this run"))
+
+  parser.add_argument("path", metavar="Experiment_Dir", action="store",
+                    help=("Enter a path to the configuration file you are using"
+                          " for your experiment"))
 
   runmode = parser.add_mutually_exclusive_group(required=True)
   runmode.add_argument("-r", "--restart", action="store_const",

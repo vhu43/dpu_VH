@@ -52,8 +52,15 @@ class Daemon:
     # Parameters for evolver runtime
     self.waited_cycles: int = 0
     self.curr_time = time.time()
-    self.logger = logging.Logger(caller)
+
+    # Set up Logging
+    self.logger = logging.getLogger(caller)
+    self.logger.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(log_dir)
+    file_handler.setLevel(logging.DEBUG)
+    self.logger.addHandler(file_handler)
     self._log_dir = log_dir
+
     self._update_queue = []
 
     # States for daemon to be in
@@ -84,8 +91,12 @@ class Daemon:
     self.server_coroutine = asyncio.start_server(self.handle_client, ip, port)
     self._server: asyncio.Server = None
 
+    self._socket_reservation = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    self._socket_reservation.bind((ip, port))
+
   async def main_job(self):
     # Start up server
+    self._socket_reservation.close()
     self._server = await self.server_coroutine
     client_handling = asyncio.create_task(self._server.start_serving()) # Done
     exp_loading = asyncio.create_task(self.update_experiment_list()) # Done
@@ -107,6 +118,7 @@ class Daemon:
   async def handle_client(self, reader: asyncio.StreamReader,
                           writer: asyncio.StreamWriter):
     """Timeout-enabled handling of clients communicating with Daemon"""
+    print("A request was seen")
     self.logger.info("A command was requested")
     try:
       await asyncio.wait_for(self.process_command(reader, writer), self.TIMEOUT)
@@ -122,19 +134,21 @@ class Daemon:
   async def process_command(self, reader: asyncio.StreamReader,
                             writer: asyncio.StreamWriter):
     """The command process tree."""
-    request = await(reader.read())
+    request = await(reader.read(global_config.MSG_LENGTH))
     response = None
-    match request.decode("utf8"):
+    match request.decode("utf8").rstrip():
       case "initialize": # Send them the address to the temp_dir for loading
+        print("sending temp_dir")
         writer.write(str(self._temp_dir).encode("utf8"))
         await writer.drain()
 
         # Expect exp_name, num_to_init
-        msg = (await reader.read()).decode("utf8")
+        msg = (await reader.read(global_config.MSG_LENGTH)).decode("utf8")
         writer.write(str(self.ACK).encode("utf8"))
         await writer.drain()
         exp_name, num_to_init, *_ = msg.split(self.VT)
-        if exp_name is None or num_to_init.isdigit():
+        print(exp_name, num_to_init)
+        if exp_name is None or not num_to_init.isdigit():
           return
         num_to_init = int(num_to_init)
 
@@ -142,6 +156,7 @@ class Daemon:
         window = self.NUM_CYCLES_TO_WAIT * self.DEFAULT_PAUSE
         self._to_start[exp_name] = {"num_left":num_to_init,
                                     "window": time.time() + window}
+        print(exp_name, self._to_start[exp_name])
         writer.write(self.EOT.encode("utf8"))
         await writer.drain()
 
@@ -149,14 +164,19 @@ class Daemon:
         if not self._pause:
           writer.write(self.ACK.encode("utf8"))
           await self.pause()
+          msg = (await reader.read(global_config.MSG_LENGTH)).decode("utf8")
         writer.write(self.EOT.encode("utf8"))
         await writer.drain()
 
       case "refill":
+        print("Attempting to refill)")
+        writer.write(self.ACK.encode("utf8"))
+        await writer.drain()
         while response != self.EOT:
           writer.write(self.ACK.encode("utf8"))
           await writer.drain()
-          response = (await reader.read()).decode("utf8").split(self.VT)
+          response = (await reader.read(global_config.MSG_LENGTH))
+          response = response.decode("utf8").split(self.VT)
           if len(response) > 1:
             fluid, vol, *_ = response
             if fluid in self._fluids:
@@ -168,6 +188,7 @@ class Daemon:
         if self._pause:
           writer.write(self.ACK.encode("utf8"))
           await self.unpause()
+          msg = (await reader.read(global_config.MSG_LENGTH)).decode("utf8")
         writer.write(self.EOT.encode("utf8"))
         await writer.drain()
 
@@ -205,7 +226,7 @@ class Daemon:
           del self.evolvers[evolver]
       if len(self.evolvers) == 0:
         self.waited_cycles += 1
-      print(f"Checking for activity ({self.waited_cycles} {self._alive})")
+      print(f"Checking for activity ({self.waited_cycles} {len(self.evolvers)})")
       await asyncio.sleep(max(self.DEFAULT_PAUSE - time.time() + start, 0))
       start = time.time()
     self.logger.info("Daemon has no active jobs and has waited too long.")
@@ -220,14 +241,16 @@ class Daemon:
     while self._alive:
       # Only keep a experiment to start for a certain amount of time
       for name, values in self._to_start.items():
-        if time.time() > values[1]:
+        if time.time() > values["window"]:
           del self._to_start[name]
           self.logger.error("Took too long to find %s. Deleting", name)
 
       # Deleting Unknown files
       for file in self._temp_dir.iterdir():
-        *name, mode, _ = file.stem.split(".")
+        print(file.stem)
+        *name, mode = file.stem.split(".")
         name = ".".join(name)
+        print(name)
         if name not in self._to_start: #Unknown file?
           file.unlink(missing_ok=True)
           continue
@@ -278,7 +301,7 @@ class Daemon:
         if len(vial_set) == 0:
           del self._vial_key[fluid_name]
           del self._fluids[fluid_name]
-      print(f"Updating experiment list {self.waited_cycles}, {self._alive}")
+      print(f"Updating experiment list {self.waited_cycles}, {self._to_start}")
       await asyncio.sleep(max(self.DEFAULT_PAUSE - time.time() + start, 0))
       start = time.time()
     return
@@ -440,12 +463,14 @@ class Daemon:
     msg = s.recv(global_config.MSG_LENGTH)
     dirname = Path(msg.decode())
     # Tell Daemon we want to initialize, and start sending packages
-    s.send("initialize".encode("utf8"))
     print(f"Loading area is {dirname}")
+    s.send(f"{exp_name}{cls.VT}{str(len(packages))}".encode("utf8"))
     msg = s.recv(global_config.MSG_LENGTH).decode("utf8")
-    while msg == cls.ACK:
+    while msg != cls.ACK:
+      print("Sending message again")
       s.send(f"{exp_name}{cls.VT}{str(len(packages))}".encode("utf8"))
       msg = s.recv(global_config.MSG_LENGTH).decode("utf8")
+    print("Message acknowledged")
     s.send(cls.EOT.encode("utf8"))
     for package, package_type in zip(packages, package_types):
       name = f"{exp_name}.{package_type}.yaml"
@@ -458,11 +483,14 @@ class Daemon:
     """
     if pause:
       cmd = "pause"
+      print("Attempting to pause...", end="")
     else:
       cmd = "unpause"
+      print("Attempting to unpause...", end="")
     s = cls._command(ip, port, cmd, timeout)
-    msg = s.recv(global_config.MSG_LENGTH).decode("utf8")
+    msg = s.recv(global_config.MSG_LENGTH).decode("utf8").rstrip()
     while msg != cls.EOT:
+      s.send(cls.EOT.encode("utf8"))
       msg = s.recv(global_config.MSG_LENGTH).decode("utf8")
     s.send(cls.EOT.encode("utf8"))
     s.close()
@@ -473,6 +501,7 @@ class Daemon:
     """
     cls._change_pause_status(ip, port, pause=True, timeout=timeout)
     s = cls._command(ip, port, "refill", timeout)
+    msg = s.recv(global_config.MSG_LENGTH).decode("utf8")
     for fluid, vol in fluids.items():
       s.send(f"{fluid}{cls.VT}{str(vol)}".encode("utf8"))
       msg = s.recv(global_config.MSG_LENGTH).decode("utf8")

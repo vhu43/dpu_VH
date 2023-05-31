@@ -32,7 +32,7 @@ class ReactorSettings:
     temp: the temperature the vials should be kept at
     stir: the stir rate the vials should mixed at
     power: the LED power that should be used
-    start_delay: The time to run before update commands occur
+    start_delays: The time to run before update commands occur
   """
   # Internal Run Parameters
   volumes: tuple[float, ...] = dataclasses.field(default_factory=tuple)
@@ -45,7 +45,7 @@ class ReactorSettings:
   power: tuple[int, ...] = dataclasses.field(default_factory=int)
 
   # Run conditions
-  start_delay: tuple[float, ...] = dataclasses.field(default_factory=tuple)
+  start_delays: tuple[float, ...] = dataclasses.field(default_factory=tuple)
   durations: tuple[float, ...] = dataclasses.field(default_factory=tuple)
 
   def __post_init__(self):
@@ -55,14 +55,14 @@ class ReactorSettings:
     self.stir = tuple(self.stir)
     self.power = tuple(self.power)
     self.temp = tuple(self.temp)
-    self.start_delay = tuple(self.start_delay)
+    self.start_delays = tuple(self.start_delays)
     self.duration = tuple(self.durations)
     self.volumes = tuple(self.volumes)
 
     invalid_settings = False
     wrong_settings = []
     iterable_settings = {
-      "start_delay": self.start_delay, "duration": self.duration,
+      "start_delay": self.start_delays, "duration": self.duration,
       "stir": self.stir, "power": self.power, "temp": self.temp,
       "volume":self.volumes}
     for name, param in iterable_settings.items():
@@ -145,7 +145,7 @@ class Bioreactor(ABC):
     birth_time = round(time.time(), -1) # Get the time that this was made
     start_times = []
     end_times = []
-    times = zip(self._base_settings.start_delay, self._base_settings.durations)
+    times = zip(self._base_settings.start_delays, self._base_settings.durations)
     for delay, duration in times:
       start_time = birth_time + self._DELAY_UNITS_TO_SECONDS * delay
       end_time = start_time + self._DELAY_UNITS_TO_SECONDS * duration
@@ -183,13 +183,17 @@ class Bioreactor(ABC):
     # Process pumps as layers:
     shift = 0
     for item in pump_cal:
-      pump_set_cal: type_hints.SensorCal = {}
+      pump_set_cal: type_hints.SensorCal = dict(calibrations["pump"])
       start = 0 + shift
       end = self._evolver.num_vials_total + shift
       set_coefs = calibrations["pump"]["coefficients"][start:end]
+      for i, coef in enumerate(set_coefs):
+        if type(coef) is str:
+          set_coefs[i] = float(coef)
       pump_set_cal["coefficients"] = set_coefs
+      print(set_coefs)
       to_process.append((item, pump_set_cal))
-      shift += self.evolver.num_vials_total
+      shift += self._evolver.num_vials_total
 
     # Obtain proper fit class name and module names to get fit object
     for location, fit_data in to_process:

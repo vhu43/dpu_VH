@@ -18,8 +18,6 @@ class TurbidostatSettings:
 
   def __post_init__(self):
     vials = self.base_settings.vials
-    self.bolus = tuple(self.bolus)
-    self.rates = tuple(self.rates)
 
     invalid_settings = False
     wrong_settings = []
@@ -85,10 +83,10 @@ class Turbidostat(bioreactor.Bioreactor):
     for vial in self.vials:
       self._is_diluting[vial] = False
 
-    self.num_readings: int = 0
+    self._num_readings: int = 0
     self._num_dilutions_left = dict(zip(self.vials, settings.n_cycles))
-    for vial, item in self._num_dilutions_left.items():
-      if item == 0:
+    for vial in self.vials:
+      if self._num_dilutions_left[vial] == 0:
         del self._num_dilutions_left[vial]
 
   @property

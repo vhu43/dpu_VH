@@ -192,7 +192,7 @@ def add_fluid_tracking(config: dict, reactors:dict[str, tuple[int, ...]]):
           fluid_key[reactor_key[vial]][vial][pump] = fluid["name"]
   return fluid_key, starting_vol
 
-def encode_start(name, working_directory, config):
+def encode_start(name, working_directory, config, ip, port):
   """Build a set of command to send to the evolver daemon
 
   returns:
@@ -200,14 +200,14 @@ def encode_start(name, working_directory, config):
     reactors: A dictionary of reactors, vials where each reactor defines
       a runmode
   """
-  ip = config["EVOLVER_IP"]
-  port = config["EVOLVER_PORT"]
+  # Get vial ranges for set of evolvers
   url = f"http://{str(ip)}:{str(port)}"
 
   # Build dictionaries that process config file
   calibrations = get_calibration(working_directory, config, url)
   global_vials = "vials" in config and config["vials"] != "None"
   reactors, _ = check_vials_and_modes(config, global_vials)
+  print("Done building dictionaries")
 
   settings = {}
   special_settings = {}
@@ -229,7 +229,7 @@ def encode_start(name, working_directory, config):
     to_write = [{"working_dir": str(working_directory),
                  "url": url,
                  "calibration": calibrations,
-                 "base_setting": settings[reactor],
+                 "base_settings": settings[reactor],
                  "special_settings": special_settings[reactor],
                  "fluid_key": fluid_key[reactor]}]
     commands[f"{name}.{reactor}.{timestamp()}"] = to_write
@@ -254,7 +254,7 @@ def build_reactor(name: str, mode: str, configurations: dict,
   base_settings = dict_to_dataclass(base_config, bioreactor.ReactorSettings,
                                     bioreactors.BASE_FIELDS)
   special_settings["base_settings"] = base_settings
-  reactor_module = importlib.import_module(f"bioreactor.{mode}")
+  reactor_module = importlib.import_module(f"evolver_manager.bioreactors.{mode}")
   setting_cls_name = f"{mode.capitalize()}{'Settings'}"
   reactor_cls = getattr(reactor_module, setting_cls_name)
   settings = dict_to_dataclass(field_dict=special_settings, cls_obj=reactor_cls)

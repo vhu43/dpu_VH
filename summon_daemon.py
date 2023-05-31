@@ -12,7 +12,6 @@ CYCLE_LENGTH = 4 # Number of seconds to wait between cycles
 EXISTING_DAEMON_EXCODE = 3
 UNICODE_EOT = "\U00000004"
 EVOLVER_NAMESPACE = "/dpu-evolver"
-LOGDIR = ""
 
 DEFAULT_IP ="localhost"
 DEFAULT_PORT = 60888
@@ -31,7 +30,7 @@ def get_options():
                       help="The port to bind to for communicating")
   parser.add_argument("log_dir", metavar="log_dir", nargs="?",
                       help="The directory the runtime log files are written to")
-  parser.add_argument("detatch", action="store_true", default=False,
+  parser.add_argument("-d", "--detatch", action="store_true", default=False,
                       help="Detatch from stdout")
   return parser.parse_args()
 
@@ -47,15 +46,15 @@ def main():
   if port is None:
     port = DEFAULT_PORT
 
-
   print(f"Attempting to summon a daemon at {ip}:{port} that logs into "
         f"{log_path}", flush=True)
   try:
     evolver_daemon = daemon.Daemon(ip, port, __name__, log_path)
-  except OSError:
-    print("An instance of the daemon or it's socket is occupied",
+  except OSError as e:
+    print("An instance of the daemon exists or it's socket is occupied",
           flush=True)
     print(UNICODE_EOT, flush=True)
+
     return EXISTING_DAEMON_EXCODE
   else:
     print("Successfully summoned daemon, now waiting for experiment",

@@ -51,7 +51,8 @@ class EvolverManager(socketio.ClientNamespace):
     """
     self.logger.debug("broadcast received")
     # Get raw data
-    raw = broadcast["data"]["data"]
+    raw = broadcast["data"]
+    print(raw)
     dpu_time = time.time()
     raw_data = {}
     for data_type in ["od_90", "od_135", "temperature"]:
