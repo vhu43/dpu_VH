@@ -25,8 +25,6 @@ class TurbidostatSettings:
 
     def __post_init__(self):
         vials = self.base_settings.vials
-        self.bolus = tuple(self.bolus)
-        self.rates = tuple(self.rates)
 
         invalid_settings = False
         wrong_settings = []

@@ -5,6 +5,7 @@ import os
 import platform
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import socketio
@@ -17,9 +18,8 @@ from evolver_manager.utils import config_utils
 
 DEFAULT_PORT = global_config.DEFAULT_PORT
 URL = global_config.DAEMON_HOST
-
 BASE_EXP_DIR = Path(".")
-URL = "localhost"
+LOG_DIR = global_config.log_dir
 DAEMON = "summon_daemon.py"
 BAR_CHAR = "\U00002501"
 TIMEOUT = 10
@@ -59,7 +59,6 @@ def main():
     else:
         kwargs.update(start_new_session=True)
 
-    # Note: Use "--detatch" if you haven't fixed the typo in summon_daemon.py yet
     daemon_cmd = [
         sys.executable,
         DAEMON,

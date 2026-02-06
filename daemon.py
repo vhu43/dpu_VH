@@ -189,7 +189,7 @@ class Daemon:
         # Only check a certain amount of cycles before retiring daemon
         while self.waited_cycles <= self.NUM_CYCLES_TO_WAIT:
             for evolver, manager in self.evolvers.items():
-                while manager.has_updates():
+                while manager.has_updates:
                     self._update_queue.append(manager.updates.pop())
                 if manager.has_no_active_experiments:
                     self.dettach_evolver(manager)
@@ -210,7 +210,7 @@ class Daemon:
         while self._alive:
             # Only keep a experiment to start for a certain amount of time
             for name, values in self._to_start.items():
-                if time.time() > values[1]:
+                if time.time() > values["window"]:
                     del self._to_start[name]
                     self.logger.error("Took too long to find %s. Deleting", name)
 
@@ -236,8 +236,8 @@ class Daemon:
                 )
                 manager.add_experiment(name, reactor, working_dir)
 
-                self._to_start[name][0] -= 1
-                if self._to_start[name][0] == 0:
+                self._to_start[name]["num_left"] -= 1
+                if self._to_start[name]["num_left"] == 0:
                     del self._to_start[name]
                     self.logger.info("Found all experiments for %s", name)
 

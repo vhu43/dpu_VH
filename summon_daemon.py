@@ -14,7 +14,6 @@ CYCLE_LENGTH = 4  # Number of seconds to wait between cycles
 EXISTING_DAEMON_EXCODE = 3
 UNICODE_EOT = "\U00000004"
 EVOLVER_NAMESPACE = "/dpu-evolver"
-LOGDIR = ""
 
 
 def get_options():
@@ -48,22 +47,23 @@ def get_options():
         help="The directory the runtime log files are written to",
     )
     parser.add_argument(
-        "detach", action="store_true", default=False, help="detach from stdout"
+        "-d", "--detatch", action="store_true", default=False,
+        help="Detach from stdout",
     )
     return parser.parse_args()
 
 
 def main():
     arguments = get_options()
-    ip = global_config.DAEMON_HOST
-    port = global_config.DAEMON_PORT
+    ip = arguments.ip
+    port = arguments.port
     log_path = Path(arguments.log_dir, "log.log")
-    detach = arguments.detach
+    detach = arguments.detatch
 
     if ip is None:
-        ip = DEFAULT_IP
+        ip = "localhost"
     if port is None:
-        port = DEFAULT_PORT
+        port = 60888
 
     print(
         f"Attempting to summon a daemon at {ip}:{port} that logs into {log_path}",
@@ -83,7 +83,6 @@ def main():
         print(" Goodbye", flush=True)
         print(UNICODE_EOT, flush=True)
         sys.stdout = open(os.devnull, "a", encoding="utf8")
-    print(UNICODE_EOT, flush=True)
     asyncio.run(evolver_daemon.main_job())
     return 0
 

@@ -248,7 +248,7 @@ def encode_start(name, working_directory, config):
                 "working_dir": str(working_directory),
                 "url": url,
                 "calibration": calibrations,
-                "base_setting": settings[reactor],
+                "base_settings": settings[reactor],
                 "special_settings": special_settings[reactor],
                 "fluid_key": fluid_key[reactor],
             }
@@ -280,7 +280,7 @@ def build_reactor(
         base_config, bioreactor.ReactorSettings, bioreactors.BASE_FIELDS
     )
     special_settings["base_settings"] = base_settings
-    reactor_module = importlib.import_module(f"bioreactor.{mode}")
+    reactor_module = importlib.import_module(f"evolver_manager.bioreactors.{mode}")
     setting_cls_name = f"{mode.capitalize()}{'Settings'}"
     reactor_cls = getattr(reactor_module, setting_cls_name)
     settings = dict_to_dataclass(field_dict=special_settings, cls_obj=reactor_cls)
