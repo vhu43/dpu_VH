@@ -17,28 +17,39 @@
 - changed socketIO.wait(seconds = x), from x to 0.1 to 0.5 to allow for longer scripts to still pass on dilution messages
 """
 
+import argparse
+import glob
+import hashlib
+import json
+import logging
 import os
-import sys
-import time
 import pickle
 import shutil
-import logging
-import argparse
-import numpy as np
-import json
+import smtplib
+import ssl
+import sys
+import time
 import traceback
-from scipy import stats
-from socketIO_client import SocketIO, BaseNamespace
-import hashlib
-import glob
-import smtplib,ssl
-
 
 import custom_script
-from custom_script import EXP_NAME, PUMP_CAL_FILE
-from custom_script import EVOLVER_IP, EVOLVER_PORT, OPERATION_MODE
-from custom_script import STIR_INITIAL, TEMP_INITIAL, POWER_INITIAL
-from custom_script import PORT, SMTP_SERVER, SENDER_EMAIL, RECEIVER_EMAIL, EMAIL_PASSWORD
+import numpy as np
+from custom_script import (
+    EMAIL_PASSWORD,
+    EVOLVER_IP,
+    EVOLVER_PORT,
+    EXP_NAME,
+    OPERATION_MODE,
+    PORT,
+    POWER_INITIAL,
+    PUMP_CAL_FILE,
+    RECEIVER_EMAIL,
+    SENDER_EMAIL,
+    SMTP_SERVER,
+    STIR_INITIAL,
+    TEMP_INITIAL,
+)
+from scipy import stats
+from socketIO_client import BaseNamespace, SocketIO
 
 # Should not be changed
 # vials to be considered/excluded should be handled
@@ -48,52 +59,51 @@ VIALS_TO_SAVE = custom_script.GLOBAL_VIALS
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 SAVE_PATH = os.getcwd()
-#EXP_DIR = os.path.join(SAVE_PATH, EXP_NAME)
+# EXP_DIR = os.path.join(SAVE_PATH, EXP_NAME)
 EXP_DIR = SAVE_PATH
-OD_CAL_PATH = os.path.join(SAVE_PATH, 'od_cal.json')
-TEMP_CAL_PATH = os.path.join(SAVE_PATH, 'temp_cal.json')
-CONFIG_PATH = os.path.join(SAVE_PATH, 'config.yml')
-PUMP_CAL_PATH = os.path.join(SAVE_PATH,'pump_cal.txt')
+OD_CAL_PATH = os.path.join(SAVE_PATH, "od_cal.json")
+TEMP_CAL_PATH = os.path.join(SAVE_PATH, "temp_cal.json")
+CONFIG_PATH = os.path.join(SAVE_PATH, "config.yml")
+PUMP_CAL_PATH = os.path.join(SAVE_PATH, "pump_cal.txt")
 
-SIGMOID = 'sigmoid'
-LINEAR = 'linear'
-THREE_DIMENSION = '3d'
-LINEAR_OD = 'linear_od'
-EXPN = 'exp'
-LOG_OD = 'log_od'
+SIGMOID = "sigmoid"
+LINEAR = "linear"
+THREE_DIMENSION = "3d"
+LINEAR_OD = "linear_od"
+EXPN = "exp"
+LOG_OD = "log_od"
 elapsed_time = 0
 
-logger = logging.getLogger('eVOLVER')
+logger = logging.getLogger("eVOLVER")
 
 EVOLVER_NS = None
+
 
 class EvolverNamespace(BaseNamespace):
     start_time = None
     use_blank = False
     OD_initial = None
 
-
     def on_connect(self, *args):
         print("Connected to eVOLVER as client")
-        logger.info('connected to eVOLVER as client')
+        logger.info("connected to eVOLVER as client")
 
     def on_disconnect(self, *args):
         print("Disconected from eVOLVER as client")
-        logger.info('disconnected to eVOLVER as client')
+        logger.info("disconnected to eVOLVER as client")
 
     def on_reconnect(self, *args):
         print("Reconnected to eVOLVER as client")
         logger.info("reconnected to eVOLVER as client")
 
     def on_broadcast(self, data):
-        logger.debug('broadcast received')
+        logger.debug("broadcast received")
         elapsed_time = round((time.time() - self.start_time) / 3600, 4)
-        logger.debug('elapsed time: %.4f hours' % elapsed_time)
+        logger.debug("elapsed time: %.4f hours" % elapsed_time)
         print("{0}: {1} Hours".format(EXP_NAME, elapsed_time))
         # are the calibrations in yet?
         if not self.check_for_calibrations():
-            logger.warning('calibration files still missing, skipping custom '
-                           'functions')
+            logger.warning("calibration files still missing, skipping custom functions")
             return
 
         with open(OD_CAL_PATH) as f:
@@ -138,79 +148,83 @@ class EvolverNamespace(BaseNamespace):
         """
 
         if data is None:
-            logger.error('could not tranform raw data, skipping user-'
-                         'defined functions')
+            logger.error("could not tranform raw data, skipping user-defined functions")
             return
 
         # should we "blank" the OD?
         if self.use_blank and self.OD_initial is None:
-            logger.info('setting initial OD reading')
-            self.OD_initial = data['transformed']['od']
+            logger.info("setting initial OD reading")
+            self.OD_initial = data["transformed"]["od"]
         elif self.OD_initial is None:
             self.OD_initial = np.zeros(len(VIALS))
-        data['transformed']['od'] = (data['transformed']['od'] -
-                                        self.OD_initial)
+        data["transformed"]["od"] = data["transformed"]["od"] - self.OD_initial
         # save data
-        self.save_data(data['transformed']['od'], elapsed_time,
-                        VIALS_TO_SAVE, 'OD')
-        self.save_data(data['transformed']['temp'], elapsed_time,
-                        VIALS_TO_SAVE, 'temp')
+        self.save_data(data["transformed"]["od"], elapsed_time, VIALS_TO_SAVE, "OD")
+        self.save_data(data["transformed"]["temp"], elapsed_time, VIALS_TO_SAVE, "temp")
 
-        for param in od_cal['params']:
-            self.save_data(data['data'].get(param, []), elapsed_time,
-                        VIALS_TO_SAVE, param + '_raw')
-        for param in temp_cal['params']:
-            self.save_data(data['data'].get(param, []), elapsed_time,
-                        VIALS_TO_SAVE, param + '_raw')
+        for param in od_cal["params"]:
+            self.save_data(
+                data["data"].get(param, []), elapsed_time, VIALS_TO_SAVE, param + "_raw"
+            )
+        for param in temp_cal["params"]:
+            self.save_data(
+                data["data"].get(param, []), elapsed_time, VIALS_TO_SAVE, param + "_raw"
+            )
         # run custom functions
         self.custom_functions(data, VIALS, elapsed_time)
         # save variables
         self.save_variables(self.start_time, self.OD_initial)
 
     def on_activecalibrations(self, data):
-        print('Calibrations recieved')
+        print("Calibrations recieved")
         if elapsed_time < 0.5:
-            inpt = input('Do you want to obtain calibrations from eVOLVER? (y/n)')
+            inpt = input("Do you want to obtain calibrations from eVOLVER? (y/n)")
         else:
-            inpt = 'n'
-            print("Calibration have NOT been stored since an experiment is in process!\nYou can manually update the calibration json files if desired.")
-        if inpt == 'y':
+            inpt = "n"
+            print(
+                "Calibration have NOT been stored since an experiment is in process!\nYou can manually update the calibration json files if desired."
+            )
+        if inpt == "y":
             for calibration in data:
-                if calibration['calibrationType'] == 'od':
+                if calibration["calibrationType"] == "od":
                     file_path = OD_CAL_PATH
-                elif calibration['calibrationType'] == 'temperature':
+                elif calibration["calibrationType"] == "temperature":
                     file_path = TEMP_CAL_PATH
                 else:
                     continue
-                for fit in calibration['fits']:
-                    if fit['active']:
-                        with open(file_path, 'w') as f:
+                for fit in calibration["fits"]:
+                    if fit["active"]:
+                        with open(file_path, "w") as f:
                             json.dump(fit, f)
                         # Gives the name and type and name of calibration
-                        print("Calibration type: %s; name: %s" %(calibration['calibrationType'],fit['name']))
+                        print(
+                            "Calibration type: %s; name: %s"
+                            % (calibration["calibrationType"], fit["name"])
+                        )
                         # Create raw data directories and files for params needed
-                        for param in fit['params']:
-                            if not os.path.isdir(os.path.join(EXP_DIR, param + '_raw')):
-                                os.makedirs(os.path.join(EXP_DIR, param + '_raw'))
-                                for x in range(len(fit['coefficients'])):
-                                    exp_str = "Experiment: {0} vial {1}, {2}".format(EXP_NAME,
-                                            x,
-                                            time.strftime("%c"))
-                                    self._create_file(x, param + '_raw', defaults=[exp_str])
+                        for param in fit["params"]:
+                            if not os.path.isdir(os.path.join(EXP_DIR, param + "_raw")):
+                                os.makedirs(os.path.join(EXP_DIR, param + "_raw"))
+                                for x in range(len(fit["coefficients"])):
+                                    exp_str = "Experiment: {0} vial {1}, {2}".format(
+                                        EXP_NAME, x, time.strftime("%c")
+                                    )
+                                    self._create_file(
+                                        x, param + "_raw", defaults=[exp_str]
+                                    )
                         break
 
     def request_calibrations(self):
-        inpt = input('Do you want to obtain calibrations from eVOLVER? (y/n)')
-        if inpt == 'y':
-            logger.debug('requesting active calibrations')
-            self.emit('getactivecal',
-                      {}, namespace = '/dpu-evolver')
+        inpt = input("Do you want to obtain calibrations from eVOLVER? (y/n)")
+        if inpt == "y":
+            logger.debug("requesting active calibrations")
+            self.emit("getactivecal", {}, namespace="/dpu-evolver")
 
     def transform_data(self, data, vials, od_cal, temp_cal):
         od_data_2 = None
 
-        if od_cal['type'] == THREE_DIMENSION:
-            od_data_2 = data['data'].get(od_cal['params'][1], None)
+        if od_cal["type"] == THREE_DIMENSION:
+            od_data_2 = data["data"].get(od_cal["params"][1], None)
 
         """
         od_90_data = data['data'].get('od_90', None)
@@ -229,25 +243,24 @@ class EvolverNamespace(BaseNamespace):
             file.write("\n")
 
         """
-        #print("RAW OD 90 DATA:")
-        #print(od_cal['params'][0])
-        #print(type(od_cal['params'][0]))
-        #print(data['data'].get('od_90', None))
-        #print("RAW OD 135 DATA:")
-        #print(data['data'].get('od_135', None))
+        # print("RAW OD 90 DATA:")
+        # print(od_cal['params'][0])
+        # print(type(od_cal['params'][0]))
+        # print(data['data'].get('od_90', None))
+        # print("RAW OD 135 DATA:")
+        # print(data['data'].get('od_135', None))
 
-
-        od_data = data['data'].get(od_cal['params'][0], None)
-        temp_data = data['data'].get(temp_cal['params'][0], None)
-        set_temp_data = data['config'].get('temp', {}).get('value', None)
+        od_data = data["data"].get(od_cal["params"][0], None)
+        temp_data = data["data"].get(temp_cal["params"][0], None)
+        set_temp_data = data["config"].get("temp", {}).get("value", None)
 
         if od_data is None or temp_data is None or set_temp_data is None:
-            print('Incomplete data recieved, Error with measurement')
-            logger.error('Incomplete data received, error with measurements')
+            print("Incomplete data recieved, Error with measurement")
+            logger.error("Incomplete data received, error with measurements")
             return None
-        if 'NaN' in od_data or 'NaN' in temp_data or 'NaN' in set_temp_data:
-            print('NaN recieved, Error with measurement')
-            logger.error('NaN received, error with measurements')
+        if "NaN" in od_data or "NaN" in temp_data or "NaN" in set_temp_data:
+            print("NaN recieved, Error with measurement")
+            logger.error("NaN received, error with measurements")
             return None
 
         od_data = np.array([float(x) for x in od_data])
@@ -258,44 +271,61 @@ class EvolverNamespace(BaseNamespace):
 
         temps = []
         for x in vials:
-            file_name =  "vial{0}_temp_config.txt".format(x)
-            file_path = os.path.join(EXP_DIR, 'temp_config', file_name)
-            temp_set_data = np.genfromtxt(file_path, delimiter=',')
-            temp_set = temp_set_data[len(temp_set_data)-1][1]
+            file_name = "vial{0}_temp_config.txt".format(x)
+            file_path = os.path.join(EXP_DIR, "temp_config", file_name)
+            temp_set_data = np.genfromtxt(file_path, delimiter=",")
+            temp_set = temp_set_data[len(temp_set_data) - 1][1]
             temps.append(temp_set)
-            od_coefficients = od_cal['coefficients'][x]
-            temp_coefficients = temp_cal['coefficients'][x]
+            od_coefficients = od_cal["coefficients"][x]
+            temp_coefficients = temp_cal["coefficients"][x]
             try:
-                if od_cal['type'] == SIGMOID:
-                    #convert raw photodiode data into ODdata using calibration curve
-                    od_data[x] = np.real(od_coefficients[2] -
-                                        ((np.log10((od_coefficients[1] -
-                                                    od_coefficients[0]) /
-                                                    (float(od_data[x]) -
-                                                    od_coefficients[0])-1)) /
-                                                    od_coefficients[3]))
+                if od_cal["type"] == SIGMOID:
+                    # convert raw photodiode data into ODdata using calibration curve
+                    od_data[x] = np.real(
+                        od_coefficients[2]
+                        - (
+                            (
+                                np.log10(
+                                    (od_coefficients[1] - od_coefficients[0])
+                                    / (float(od_data[x]) - od_coefficients[0])
+                                    - 1
+                                )
+                            )
+                            / od_coefficients[3]
+                        )
+                    )
                     if not np.isfinite(od_data[x]):
-                        od_data[x] = 'NaN'
-                        logger.debug('OD from vial %d: %s' % (x, od_data[x]))
+                        od_data[x] = "NaN"
+                        logger.debug("OD from vial %d: %s" % (x, od_data[x]))
                     else:
-                        logger.debug('OD from vial %d: %.3f' % (x, od_data[x]))
-                elif od_cal['type'] == LOG_OD:
-                    od_data[x] = np.real(od_coefficients[0] +
-                                        (od_coefficients[1] * 
-                                        (np.log((od_coefficients[2] - 
-                                        (od_data[x]))/od_coefficients[3]))))
-                elif od_cal['type'] == THREE_DIMENSION:
-                    od_data[x] = np.real(od_coefficients[0] +
-                                        (od_coefficients[1]*od_data[x]) +
-                                        (od_coefficients[2]*od_data_2[x]) +
-                                        (od_coefficients[3]*(od_data[x]**2)) +
-                                        (od_coefficients[4]*od_data[x]*od_data_2[x]) +
-                                        (od_coefficients[5]*(od_data_2[x]**2)))
-                elif od_cal['type'] == LINEAR_OD:
-                    #print("Vial %d\n"%x)
-                    #print(od_data[x])
-                    #print(od_coefficients[0])
-                    #print(od_coefficients[1])
+                        logger.debug("OD from vial %d: %.3f" % (x, od_data[x]))
+                elif od_cal["type"] == LOG_OD:
+                    od_data[x] = np.real(
+                        od_coefficients[0]
+                        + (
+                            od_coefficients[1]
+                            * (
+                                np.log(
+                                    (od_coefficients[2] - (od_data[x]))
+                                    / od_coefficients[3]
+                                )
+                            )
+                        )
+                    )
+                elif od_cal["type"] == THREE_DIMENSION:
+                    od_data[x] = np.real(
+                        od_coefficients[0]
+                        + (od_coefficients[1] * od_data[x])
+                        + (od_coefficients[2] * od_data_2[x])
+                        + (od_coefficients[3] * (od_data[x] ** 2))
+                        + (od_coefficients[4] * od_data[x] * od_data_2[x])
+                        + (od_coefficients[5] * (od_data_2[x] ** 2))
+                    )
+                elif od_cal["type"] == LINEAR_OD:
+                    # print("Vial %d\n"%x)
+                    # print(od_data[x])
+                    # print(od_coefficients[0])
+                    # print(od_coefficients[1])
                     """
                     $file_name = "vial%d_od_conv_log.txt"%x
                     od_file_path = os.path.join(EXP_DIR, file_name)
@@ -303,7 +333,9 @@ class EvolverNamespace(BaseNamespace):
                     if x in range(0,4):
                         od_file.write(str(od_data[x]) + ',')
                     """
-                    od_data[x] = np.real(od_coefficients[0]*float(od_data[x]) + od_coefficients[1])
+                    od_data[x] = np.real(
+                        od_coefficients[0] * float(od_data[x]) + od_coefficients[1]
+                    )
 
                     """
                     if x in range(0,4):
@@ -312,309 +344,363 @@ class EvolverNamespace(BaseNamespace):
                         od_data[x] = 0
                     od_file.close()
                     """
-                    #print(od_data[x])
-                    logger.debug('OD from vial %d: %.3f' % (x, od_data[x]))
-                elif od_cal['type'] == EXPN:
-                    #print("Vial %d:"%x)
-                    #print(od_data[x])
-                    #print(od_coefficients)
-                    od_data[x] = 1/od_coefficients[1] * (np.exp((od_data[x] - od_coefficients[3])/od_coefficients[0])-od_coefficients[2])
+                    # print(od_data[x])
+                    logger.debug("OD from vial %d: %.3f" % (x, od_data[x]))
+                elif od_cal["type"] == EXPN:
+                    # print("Vial %d:"%x)
+                    # print(od_data[x])
+                    # print(od_coefficients)
+                    od_data[x] = (
+                        1
+                        / od_coefficients[1]
+                        * (
+                            np.exp(
+                                (od_data[x] - od_coefficients[3]) / od_coefficients[0]
+                            )
+                            - od_coefficients[2]
+                        )
+                    )
                 else:
-                    logger.error('OD calibration not of supported type!')
-                    od_data[x] = 'NaN'
+                    logger.error("OD calibration not of supported type!")
+                    od_data[x] = "NaN"
             except ValueError:
                 print("OD Read Error")
-                logger.error('OD read error for vial %d, setting to NaN' % x)
-                od_data[x] = 'NaN'
+                logger.error("OD read error for vial %d, setting to NaN" % x)
+                od_data[x] = "NaN"
             try:
-                temp_data[x] = (float(temp_data[x]) *
-                                temp_coefficients[0]) + temp_coefficients[1]
-                logger.debug('temperature from vial %d: %.3f' % (x, temp_data[x]))
+                temp_data[x] = (
+                    float(temp_data[x]) * temp_coefficients[0]
+                ) + temp_coefficients[1]
+                logger.debug("temperature from vial %d: %.3f" % (x, temp_data[x]))
             except ValueError:
                 print("Temp Read Error")
-                logger.error('temperature read error for vial %d, setting to NaN'
-                            % x)
-                temp_data[x]  = 'NaN'
+                logger.error("temperature read error for vial %d, setting to NaN" % x)
+                temp_data[x] = "NaN"
             try:
-                set_temp_data[x] = (float(set_temp_data[x]) *
-                                    temp_coefficients[0]) + temp_coefficients[1]
-                logger.debug('set_temperature from vial %d: %.3f' % (x,
-                                                                set_temp_data[x]))
+                set_temp_data[x] = (
+                    float(set_temp_data[x]) * temp_coefficients[0]
+                ) + temp_coefficients[1]
+                logger.debug(
+                    "set_temperature from vial %d: %.3f" % (x, set_temp_data[x])
+                )
             except ValueError:
                 print("Set Temp Read Error")
-                logger.error('set temperature read error for vial %d, setting to NaN'
-                            % x)
-                set_temp_data[x]  = 'NaN'
+                logger.error(
+                    "set temperature read error for vial %d, setting to NaN" % x
+                )
+                set_temp_data[x] = "NaN"
 
         temps = np.array(temps)
         # update temperatures only if difference with expected
         # value is above 0.2 degrees celsius
         delta_t = np.abs(set_temp_data - temps).max()
         if delta_t > 0.2:
-            logger.info('updating temperatures (max. deltaT is %.2f)' %
-                        delta_t)
-            coefficients = temp_cal['coefficients']
-            raw_temperatures = [str(int((temps[x] - temp_cal['coefficients'][x][1]) /
-                                        temp_cal['coefficients'][x][0]))
-                                for x in vials]
+            logger.info("updating temperatures (max. deltaT is %.2f)" % delta_t)
+            coefficients = temp_cal["coefficients"]
+            raw_temperatures = [
+                str(
+                    int(
+                        (temps[x] - temp_cal["coefficients"][x][1])
+                        / temp_cal["coefficients"][x][0]
+                    )
+                )
+                for x in vials
+            ]
             self.update_temperature(raw_temperatures)
         else:
             # config from server agrees with local config
             # report if actual temperature doesn't match
             delta_t = np.abs(temps - temp_data).max()
             if delta_t > 0.2:
-                logger.info('actual temperature doesn\'t match configuration '
-                            '(yet? max deltaT is %.2f)' % delta_t)
-                logger.debug('temperature config: %s' % temps)
-                logger.debug('actual temperatures: %s' % temp_data)
+                logger.info(
+                    "actual temperature doesn't match configuration "
+                    "(yet? max deltaT is %.2f)" % delta_t
+                )
+                logger.debug("temperature config: %s" % temps)
+                logger.debug("actual temperatures: %s" % temp_data)
 
         # add a new field in the data dictionary
-        data['transformed'] = {}
-        data['transformed']['od'] = od_data
-        data['transformed']['temp'] = temp_data
+        data["transformed"] = {}
+        data["transformed"]["od"] = od_data
+        data["transformed"]["temp"] = temp_data
         return data
 
-    def update_stir_rate(self, stir_rates, immediate = False):
-        data = {'param': 'stir', 'value': stir_rates,
-                'immediate': immediate, 'recurring': True}
-        logger.debug('stir rate command: %s' % data)
-        self.emit('command', data, namespace = '/dpu-evolver')
+    def update_stir_rate(self, stir_rates, immediate=False):
+        data = {
+            "param": "stir",
+            "value": stir_rates,
+            "immediate": immediate,
+            "recurring": True,
+        }
+        logger.debug("stir rate command: %s" % data)
+        self.emit("command", data, namespace="/dpu-evolver")
 
-    def update_temperature(self, temperatures, immediate = False):
-        data = {'param': 'temp', 'value': temperatures,
-                'immediate': immediate, 'recurring': True}
-        logger.debug('temperature command: %s' % data)
-        self.emit('command', data, namespace = '/dpu-evolver')
+    def update_temperature(self, temperatures, immediate=False):
+        data = {
+            "param": "temp",
+            "value": temperatures,
+            "immediate": immediate,
+            "recurring": True,
+        }
+        logger.debug("temperature command: %s" % data)
+        self.emit("command", data, namespace="/dpu-evolver")
 
-    def update_led_power(self, led_powers, immediate = False):
-        data = {'param': 'od_led', 'value': led_powers,
-                'immediate': immediate, 'recurring': True}
-        logger.debug('led power command: %s' % data)
-        self.emit('command', data, namespace = '/dpu-evolver')
+    def update_led_power(self, led_powers, immediate=False):
+        data = {
+            "param": "od_led",
+            "value": led_powers,
+            "immediate": immediate,
+            "recurring": True,
+        }
+        logger.debug("led power command: %s" % data)
+        self.emit("command", data, namespace="/dpu-evolver")
 
     def fluid_command(self, MESSAGE):
-        #logger.debug('fluid command: %s' % MESSAGE)
-        logger.info('fluid command: %s' % MESSAGE)
-        command = {'param': 'pump', 'value': MESSAGE,
-                   'recurring': False ,'immediate': True}
-        self.emit('command', command, namespace='/dpu-evolver')
+        # logger.debug('fluid command: %s' % MESSAGE)
+        logger.info("fluid command: %s" % MESSAGE)
+        command = {
+            "param": "pump",
+            "value": MESSAGE,
+            "recurring": False,
+            "immediate": True,
+        }
+        self.emit("command", command, namespace="/dpu-evolver")
 
-    def update_chemo(self, data, vials, bolus_in_s, period_config, immediate = False):
-        current_pump = data['config']['pump']['value']
+    def update_chemo(self, data, vials, bolus_in_s, period_config, immediate=False):
+        current_pump = data["config"]["pump"]["value"]
 
-        MESSAGE = {'fields_expected_incoming': 49,
-                   'fields_expected_outgoing': 49,
-                   'recurring': True,
-                   'immediate': immediate,
-                   'value': ['--'] * 48,
-                   'param': 'pump'}
+        MESSAGE = {
+            "fields_expected_incoming": 49,
+            "fields_expected_outgoing": 49,
+            "recurring": True,
+            "immediate": immediate,
+            "value": ["--"] * 48,
+            "param": "pump",
+        }
 
         for x in vials:
             # stop pumps if period is zero
             if period_config[x] == 0:
                 # influx
-                MESSAGE['value'][x] = '0|0'
+                MESSAGE["value"][x] = "0|0"
                 # efflux
-                MESSAGE['value'][x + 16] = '0|0'
+                MESSAGE["value"][x + 16] = "0|0"
             else:
                 # influx
-                MESSAGE['value'][x] = '%.2f|%d' % (bolus_in_s[x], period_config[x])
+                MESSAGE["value"][x] = "%.2f|%d" % (bolus_in_s[x], period_config[x])
                 # efflux
-                MESSAGE['value'][x + 16] = '%.2f|%d' % (bolus_in_s[x] * 2,
-                                                        period_config[x])
+                MESSAGE["value"][x + 16] = "%.2f|%d" % (
+                    bolus_in_s[x] * 2,
+                    period_config[x],
+                )
 
-        if MESSAGE['value'] != current_pump:
-            logger.info('updating chemostat: %s' % MESSAGE)
-            self.emit('command', MESSAGE, namespace = '/dpu-evolver')
+        if MESSAGE["value"] != current_pump:
+            logger.info("updating chemostat: %s" % MESSAGE)
+            self.emit("command", MESSAGE, namespace="/dpu-evolver")
 
-    def stop_all_pumps(self, ):
-        data = {'param': 'pump',
-                'value': ['0'] * 48,
-                'recurring': False,
-                'immediate': True}
-        logger.info('stopping all pumps')
-        self.emit('command', data, namespace = '/dpu-evolver')
+    def stop_all_pumps(
+        self,
+    ):
+        data = {
+            "param": "pump",
+            "value": ["0"] * 48,
+            "recurring": False,
+            "immediate": True,
+        }
+        logger.info("stopping all pumps")
+        self.emit("command", data, namespace="/dpu-evolver")
 
     def _create_file(self, vial, param, directory=None, defaults=None):
         if defaults is None:
             defaults = []
         if directory is None:
             directory = param
-        file_name =  "vial{0}_{1}.txt".format(vial, param)
+        file_name = "vial{0}_{1}.txt".format(vial, param)
         file_path = os.path.join(EXP_DIR, directory, file_name)
         text_file = open(file_path, "w")
         for default in defaults:
-            text_file.write(default + '\n')
+            text_file.write(default + "\n")
         text_file.close()
 
     def initialize_exp(self, vials, always_yes=False):
-        logger.debug('initializing experiment')
+        logger.debug("initializing experiment")
 
         if os.path.exists(EXP_DIR):
-            logger.info('found an existing experiment')
+            logger.info("found an existing experiment")
             exp_continue = None
             if always_yes:
-                exp_continue = 'y'
+                exp_continue = "y"
             else:
                 if options.restart_expt == True or options.emer_restart == True:
-                    exp_continue = 'y'
+                    exp_continue = "y"
                 elif options.new_expt == True:
-                    exp_continue= 'n'
+                    exp_continue = "n"
                 else:
-                    while exp_continue not in ['y', 'n']:
-                        exp_continue = input('Continue from existing experiment? (y/n): ')
-            
+                    while exp_continue not in ["y", "n"]:
+                        exp_continue = input(
+                            "Continue from existing experiment? (y/n): "
+                        )
+
             if options.emer_restart == True:
                 context = ssl.create_default_context()
                 email_message = "Unplanned reboot occurrred!\nPlease check on the status of your experiment ASAP"
-                with smtplib.SMTP_SSL(SMTP_SERVER,PORT,context=context) as server:
-                    server.login(SENDER_EMAIL,EMAIL_PASSWORD)
-                    server.sendmail(SENDER_EMAIL,RECEIVER_EMAIL,email_message)
-                
-                print("Unplanned reboot occurred!!\n Alert Email Sent to %s"%(RECEIVER_EMAIL))
-        else:
-            exp_continue = 'n'
+                with smtplib.SMTP_SSL(SMTP_SERVER, PORT, context=context) as server:
+                    server.login(SENDER_EMAIL, EMAIL_PASSWORD)
+                    server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_message)
 
-        if exp_continue == 'n':
+                print(
+                    "Unplanned reboot occurred!!\n Alert Email Sent to %s"
+                    % (RECEIVER_EMAIL)
+                )
+        else:
+            exp_continue = "n"
+
+        if exp_continue == "n":
             if os.path.exists(EXP_DIR):
                 exp_overwrite = None
                 if always_yes:
-                    exp_overwrite = 'y'
+                    exp_overwrite = "y"
                 else:
-                    while exp_overwrite not in ['y', 'n']:
-                        exp_overwrite = input('This will overwrite any existing experimental data!! Do you want to continue? (y/n): ')
-                logger.info('data directory already exists')
-                if exp_overwrite == 'y':
-                    logger.info('deleting existing data directory')
-                    files = glob.glob(EXP_DIR+'/*')
+                    while exp_overwrite not in ["y", "n"]:
+                        exp_overwrite = input(
+                            "This will overwrite any existing experimental data!! Do you want to continue? (y/n): "
+                        )
+                logger.info("data directory already exists")
+                if exp_overwrite == "y":
+                    logger.info("deleting existing data directory")
+                    files = glob.glob(EXP_DIR + "/*")
                     for f in files:
-                        if f != OD_CAL_PATH and f != TEMP_CAL_PATH and f != CONFIG_PATH and f != PUMP_CAL_PATH:
+                        if (
+                            f != OD_CAL_PATH
+                            and f != TEMP_CAL_PATH
+                            and f != CONFIG_PATH
+                            and f != PUMP_CAL_PATH
+                        ):
                             try:
                                 os.remove(f)
                             except:
                                 try:
                                     shutil.rmtree(f)
                                 except:
-                                    print("unable to remove %s!"%f)
+                                    print("unable to remove %s!" % f)
                 else:
-                    print('Please create a new experimental folder '
-                        'and then restart...')
-                    logger.warning('not deleting existing data directory, exiting')
+                    print("Please create a new experimental folder and then restart...")
+                    logger.warning("not deleting existing data directory, exiting")
                     sys.exit(1)
 
             start_time = time.time()
 
             self.request_calibrations()
 
-            logger.debug('creating data directories')
-            os.makedirs(os.path.join(EXP_DIR, 'OD'))
-            os.makedirs(os.path.join(EXP_DIR, 'temp'))
-            os.makedirs(os.path.join(EXP_DIR, 'temp_config'))
-            os.makedirs(os.path.join(EXP_DIR, 'pump_log'))
-            os.makedirs(os.path.join(EXP_DIR, 'ODset'))
-            os.makedirs(os.path.join(EXP_DIR, 'growthrate'))
-            os.makedirs(os.path.join(EXP_DIR, 'chemo_config'))
-            os.makedirs(os.path.join(EXP_DIR, 'od_90_raw'))
-            os.makedirs(os.path.join(EXP_DIR, 'od_135_raw'))
-            os.makedirs(os.path.join(EXP_DIR, 'temp_raw'))
+            logger.debug("creating data directories")
+            os.makedirs(os.path.join(EXP_DIR, "OD"))
+            os.makedirs(os.path.join(EXP_DIR, "temp"))
+            os.makedirs(os.path.join(EXP_DIR, "temp_config"))
+            os.makedirs(os.path.join(EXP_DIR, "pump_log"))
+            os.makedirs(os.path.join(EXP_DIR, "ODset"))
+            os.makedirs(os.path.join(EXP_DIR, "growthrate"))
+            os.makedirs(os.path.join(EXP_DIR, "chemo_config"))
+            os.makedirs(os.path.join(EXP_DIR, "od_90_raw"))
+            os.makedirs(os.path.join(EXP_DIR, "od_135_raw"))
+            os.makedirs(os.path.join(EXP_DIR, "temp_raw"))
 
             # Updated directory creation for morbidostat
-            os.makedirs(os.path.join(EXP_DIR, 'growth_rate')) # Carry over from previous mstat code
-            os.makedirs(os.path.join(EXP_DIR, 'drug_log'))
-            os.makedirs(os.path.join(EXP_DIR, 'logs'))
-            os.makedirs(os.path.join(EXP_DIR, 'PIDLog'))
-            os.makedirs(os.path.join(EXP_DIR, 'offset_log'))
+            os.makedirs(
+                os.path.join(EXP_DIR, "growth_rate")
+            )  # Carry over from previous mstat code
+            os.makedirs(os.path.join(EXP_DIR, "drug_log"))
+            os.makedirs(os.path.join(EXP_DIR, "logs"))
+            os.makedirs(os.path.join(EXP_DIR, "PIDLog"))
+            os.makedirs(os.path.join(EXP_DIR, "offset_log"))
             # End directory creation for mstat
 
             # creates an initial snapshot of custom_script.py and config.yml
-            script_name = os.path.join(SCRIPT_DIR,'custom_script.py')
-            shutil.copy(script_name, os.path.join(EXP_DIR,'custom_script_latest.txt'))
-            yml_name = os.path.join(SAVE_PATH,'config.yml')
-            shutil.copy(yml_name, os.path.join(EXP_DIR,'config_yml_latest.txt'))
-            
-            for x in vials:
-                exp_str = "Experiment: {0} vial {1}, {2}".format(EXP_NAME,
-                                                                 x,
-                                                           time.strftime("%c"))
-                # make OD file
-                self._create_file(x, 'OD', defaults=[exp_str])
-                # make temperature data file
-                self._create_file(x, 'temp')
-                # make temperature configuration file
-                self._create_file(x, 'temp_config',
-                                  defaults=[exp_str,
-                                            "0,{0}".format(TEMP_INITIAL[x])])
-                # make pump log file
-                self._create_file(x, 'pump_log',
-                                  defaults=[exp_str,
-                                            "0,0"])
-                # make ODset file
-                self._create_file(x, 'ODset',
-                                  defaults=[exp_str,
-                                            "0,0"])
-                # make growth rate file
-                self._create_file(x, 'gr',
-                                  defaults=[exp_str,
-                                            "0,0"],
-                                  directory='growthrate')
-                # make chemostat file
-                self._create_file(x, 'chemo_config',
-                                  defaults=["0,0,0",
-                                            "0,0,0"],
-                                  directory='chemo_config')
+            script_name = os.path.join(SCRIPT_DIR, "custom_script.py")
+            shutil.copy(script_name, os.path.join(EXP_DIR, "custom_script_latest.txt"))
+            yml_name = os.path.join(SAVE_PATH, "config.yml")
+            shutil.copy(yml_name, os.path.join(EXP_DIR, "config_yml_latest.txt"))
 
+            for x in vials:
+                exp_str = "Experiment: {0} vial {1}, {2}".format(
+                    EXP_NAME, x, time.strftime("%c")
+                )
+                # make OD file
+                self._create_file(x, "OD", defaults=[exp_str])
+                # make temperature data file
+                self._create_file(x, "temp")
+                # make temperature configuration file
+                self._create_file(
+                    x,
+                    "temp_config",
+                    defaults=[exp_str, "0,{0}".format(TEMP_INITIAL[x])],
+                )
+                # make pump log file
+                self._create_file(x, "pump_log", defaults=[exp_str, "0,0"])
+                # make ODset file
+                self._create_file(x, "ODset", defaults=[exp_str, "0,0"])
+                # make growth rate file
+                self._create_file(
+                    x, "gr", defaults=[exp_str, "0,0"], directory="growthrate"
+                )
+                # make chemostat file
+                self._create_file(
+                    x,
+                    "chemo_config",
+                    defaults=["0,0,0", "0,0,0"],
+                    directory="chemo_config",
+                )
 
                 # make additional files for mstat
-                dir_path =  EXP_DIR
+                dir_path = EXP_DIR
 
-                growth_path =  "%s/growth_rate/vial%d_growth_rate.txt" % (dir_path,x)
-                text_file = open(growth_path,"w")
+                growth_path = "%s/growth_rate/vial%d_growth_rate.txt" % (dir_path, x)
+                text_file = open(growth_path, "w")
                 text_file.write("0,0\n0,0\n")
                 text_file.close()
 
-                drug_log_path =   "%s/drug_log/vial%d_drug_log.txt" % (dir_path,x)
-                text_file = open(drug_log_path,"w")
+                drug_log_path = "%s/drug_log/vial%d_drug_log.txt" % (dir_path, x)
+                text_file = open(drug_log_path, "w")
                 text_file.write("0,0\n0,0\n")
                 text_file.close()
 
-                log_path = "%s/logs/vial%d_log.txt" % (dir_path,x)
-                text_file = open(log_path,"w")
+                log_path = "%s/logs/vial%d_log.txt" % (dir_path, x)
+                text_file = open(log_path, "w")
                 text_file.write("0,0\n0,0\n")
                 text_file.close()
 
-                log_path = "%s/PIDLog/vial%d_PIDLog.txt" % (dir_path,x)
-                text_file = open(log_path,"w")
-                #Log file consists of t, e(t), Int(e(t) dt, 0,t), d(e(t)/dt), Kp, Ki, Kd, output
+                log_path = "%s/PIDLog/vial%d_PIDLog.txt" % (dir_path, x)
+                text_file = open(log_path, "w")
+                # Log file consists of t, e(t), Int(e(t) dt, 0,t), d(e(t)/dt), Kp, Ki, Kd, output
                 text_file.write("0,0,0,0,0,0,0,0,0\n")
                 text_file.write("0,0,0,0,0,0,0,0,0\n")
                 text_file.close()
 
-                log_path = "%s/offset_log/vial%d_offset.txt" % (dir_path,x)
-                text_file = open(log_path,"w")
+                log_path = "%s/offset_log/vial%d_offset.txt" % (dir_path, x)
+                text_file = open(log_path, "w")
                 text_file.write("0,0\n0,0\n")
                 text_file.close()
 
                 log_path = "%s/pump_log/confirmed_pump_log.txt" % (dir_path)
-                text_file = open(log_path,"w")
+                text_file = open(log_path, "w")
                 text_file.write("0,0\n0,0\n")
                 text_file.close()
 
                 # END mstat file updating
 
             # make GLOBAL log and pump log file
-            dir_path =  EXP_DIR
+            dir_path = EXP_DIR
             log_path = "%s/logs/vial00_log.txt" % (dir_path)
-            text_file = open(log_path,"w")
+            text_file = open(log_path, "w")
             text_file.write("0,0\n0,0\n")
             text_file.close()
 
-            pump_path =  "%s/pump_log/vial00_pump_log.txt" % (dir_path)
-            text_file = open(pump_path,"w")
+            pump_path = "%s/pump_log/vial00_pump_log.txt" % (dir_path)
+            text_file = open(pump_path, "w")
             text_file.write("0,0\n0,0\n")
             text_file.close()
 
-            pump_path =  "%s/pump_log/confirmed_pump_log.txt" % (dir_path)
-            text_file = open(pump_path,"w")
+            pump_path = "%s/pump_log/confirmed_pump_log.txt" % (dir_path)
+            text_file = open(pump_path, "w")
             text_file.write("0,0,0\n0,0,0\n")
             text_file.close()
 
@@ -622,23 +708,23 @@ class EvolverNamespace(BaseNamespace):
             self.update_led_power(POWER_INITIAL)
 
             if always_yes:
-                exp_blank = 'y'
+                exp_blank = "y"
             else:
-                exp_blank = input('Calibrate vials to blank? (y/n): ')
-            if exp_blank == 'y':
+                exp_blank = input("Calibrate vials to blank? (y/n): ")
+            if exp_blank == "y":
                 # will do it with first broadcast
                 self.use_blank = True
-                logger.info('will use initial OD measurement as blank')
+                logger.info("will use initial OD measurement as blank")
             else:
                 self.use_blank = False
                 self.OD_initial = np.zeros(len(vials))
         else:
             # load existing experiment
-            pickle_name =  "{0}.pickle".format(EXP_NAME)
+            pickle_name = "{0}.pickle".format(EXP_NAME)
             pickle_path = os.path.join(EXP_DIR, pickle_name)
-            logger.info('loading previous experiment data: %s' % pickle_path)
-            with open(pickle_path, 'rb') as f:
-                loaded_var  = pickle.load(f)
+            logger.info("loading previous experiment data: %s" % pickle_path)
+            with open(pickle_path, "rb") as f:
+                loaded_var = pickle.load(f)
             x = loaded_var
             start_time = x[0]
             self.OD_initial = x[1]
@@ -647,50 +733,55 @@ class EvolverNamespace(BaseNamespace):
 
         # Gets the latest custom_script backup and checks if it is the same as the current executing file
         try:
-            latest_script_filename = os.path.join(EXP_DIR,'custom_script_latest.txt')
-            script_name = os.path.join(SCRIPT_DIR,'custom_script.py')
-            latest_hash = hashlib.md5(open(latest_script_filename, 'rb').read()).hexdigest()
-            script_hash = hashlib.md5(open(script_name, 'rb').read()).hexdigest()
+            latest_script_filename = os.path.join(EXP_DIR, "custom_script_latest.txt")
+            script_name = os.path.join(SCRIPT_DIR, "custom_script.py")
+            latest_hash = hashlib.md5(
+                open(latest_script_filename, "rb").read()
+            ).hexdigest()
+            script_hash = hashlib.md5(open(script_name, "rb").read()).hexdigest()
         except:
-            print('Error hashing custom_script.py!')
+            print("Error hashing custom_script.py!")
             latest_hash = 0
             script_hash = 1
 
         if latest_hash != script_hash:
             # copy current custom script and config.yml to txt file
-            backup_filename = 'custom_script_{0}.txt'.format(time.strftime('%y%m%d_%H%M'))
-            shutil.copy(script_name, os.path.join(EXP_DIR,backup_filename))
-            shutil.copy(script_name, os.path.join(EXP_DIR,'custom_script_latest.txt'))
-            logger.info('saved a copy of current custom_script.py as %s' %
-                    backup_filename)
+            backup_filename = "custom_script_{0}.txt".format(
+                time.strftime("%y%m%d_%H%M")
+            )
+            shutil.copy(script_name, os.path.join(EXP_DIR, backup_filename))
+            shutil.copy(script_name, os.path.join(EXP_DIR, "custom_script_latest.txt"))
+            logger.info(
+                "saved a copy of current custom_script.py as %s" % backup_filename
+            )
 
         # Gets the latest config.yml backup and checks if it is the same as the current config file
         try:
-            latest_yml_name = os.path.join(EXP_DIR,'config_yml_latest.txt')
-            yml_name = os.path.join(SAVE_PATH,'config.yml')
-            latest_yml_hash = hashlib.md5(open(latest_yml_name, 'rb').read()).hexdigest()
-            yml_hash = hashlib.md5(open(yml_name, 'rb').read()).hexdigest()
+            latest_yml_name = os.path.join(EXP_DIR, "config_yml_latest.txt")
+            yml_name = os.path.join(SAVE_PATH, "config.yml")
+            latest_yml_hash = hashlib.md5(
+                open(latest_yml_name, "rb").read()
+            ).hexdigest()
+            yml_hash = hashlib.md5(open(yml_name, "rb").read()).hexdigest()
         except:
-            print('Error hashing config.yml!')
+            print("Error hashing config.yml!")
             latest_yml_hash = 0
             yml_hash = 1
 
         if latest_yml_hash != yml_hash:
             # copy current config.yml to txt file
-            yml_filename = 'config_yml_{0}.txt'.format(time.strftime('%y%m%d_%H%M'))
-            shutil.copy(yml_name, os.path.join(EXP_DIR,yml_filename))
-            shutil.copy(yml_name, os.path.join(EXP_DIR,'config_yml_latest.txt'))
-            logger.info('saved a copy of current config.yml as %s' %
-                    yml_filename)
-                                                    
-        
+            yml_filename = "config_yml_{0}.txt".format(time.strftime("%y%m%d_%H%M"))
+            shutil.copy(yml_name, os.path.join(EXP_DIR, yml_filename))
+            shutil.copy(yml_name, os.path.join(EXP_DIR, "config_yml_latest.txt"))
+            logger.info("saved a copy of current config.yml as %s" % yml_filename)
+
         return start_time
 
     def check_for_calibrations(self):
         result = True
         if not os.path.exists(OD_CAL_PATH) or not os.path.exists(TEMP_CAL_PATH):
             # log and request again
-            logger.warning('Calibrations not received yet, requesting again')
+            logger.warning("Calibrations not received yet, requesting again")
             self.request_calibrations()
             result = False
         return result
@@ -699,7 +790,7 @@ class EvolverNamespace(BaseNamespace):
         if len(data) == 0:
             return
         for x in vials:
-            file_name =  "vial{0}_{1}.txt".format(x, parameter)
+            file_name = "vial{0}_{1}.txt".format(x, parameter)
             file_path = os.path.join(EXP_DIR, parameter, file_name)
             text_file = open(file_path, "a+")
             text_file.write("{0},{1}\n".format(elapsed_time, data[x]))
@@ -711,8 +802,8 @@ class EvolverNamespace(BaseNamespace):
         save_path = os.getcwd()
         pickle_name = "{0}.pickle".format(EXP_NAME)
         pickle_path = os.path.join(EXP_DIR, pickle_name)
-        logger.debug('saving all variables: %s' % pickle_path)
-        with open(pickle_path, 'wb') as f:
+        logger.debug("saving all variables: %s" % pickle_path)
+        with open(pickle_path, "wb") as f:
             pickle.dump([start_time, OD_initial], f)
 
     def get_flow_rate(self):
@@ -722,14 +813,14 @@ class EvolverNamespace(BaseNamespace):
             flow_rate = flow_calibration
         else:
             # Currently just implementing influx flow rate
-            flow_rate = flow_calibration[0,:]
+            flow_rate = flow_calibration[0, :]
         return flow_rate
 
     def calc_growth_rate(self, vial, gr_start, elapsed_time):
-        ODfile_name =  "vial{0}_OD.txt".format(vial)
+        ODfile_name = "vial{0}_OD.txt".format(vial)
         # Grab Data and make setpoint
-        OD_path = os.path.join(EXP_DIR, 'OD', ODfile_name)
-        OD_data = np.genfromtxt(OD_path, delimiter=',')
+        OD_path = os.path.join(EXP_DIR, "OD", ODfile_name)
+        OD_data = np.genfromtxt(OD_path, delimiter=",")
         raw_time = OD_data[:, 0]
         raw_OD = OD_data[:, 1]
         raw_time = raw_time[np.isfinite(raw_OD)]
@@ -742,13 +833,13 @@ class EvolverNamespace(BaseNamespace):
         # Take natural log, calculate slope
         log_OD = np.log(trim_OD)
         slope, intercept, r_value, p_value, std_err = stats.linregress(
-            trim_time[np.isfinite(log_OD)],
-            log_OD[np.isfinite(log_OD)])
-        logger.debug('growth rate for vial %s: %.2f' % (vial, slope))
+            trim_time[np.isfinite(log_OD)], log_OD[np.isfinite(log_OD)]
+        )
+        logger.debug("growth rate for vial %s: %.2f" % (vial, slope))
 
         # Save slope to file
-        file_name =  "vial{0}_gr.txt".format(vial)
-        gr_path = os.path.join(EXP_DIR, 'growthrate', file_name)
+        file_name = "vial{0}_gr.txt".format(vial)
+        gr_path = os.path.join(EXP_DIR, "growthrate", file_name)
         text_file = open(gr_path, "a+")
         text_file.write("{0},{1}\n".format(elapsed_time, slope))
         text_file.close()
@@ -758,7 +849,7 @@ class EvolverNamespace(BaseNamespace):
         Reads file from the end and returns a numpy array with the data of the last 'window' lines.
         Alternative to np.genfromtxt(path) by loading only the needed lines instead of the whole file.
         """
-        f = open(path, 'rb')
+        f = open(path, "rb")
         if window == 0:
             return []
 
@@ -780,20 +871,20 @@ class EvolverNamespace(BaseNamespace):
                 # only read what was not read
                 bunch = f.read(remaining_bytes)
 
-            bunch = bunch.decode('utf-8')
+            bunch = bunch.decode("utf-8")
             data.append(bunch)
-            size -= bunch.count('\n')
+            size -= bunch.count("\n")
             remaining_bytes -= BUFFER_SIZE
             block -= 1
 
-        data = ''.join(reversed(data)).splitlines()[-window:]
+        data = "".join(reversed(data)).splitlines()[-window:]
 
         if len(data) < window:
             # Not enough data
             return np.asarray([])
 
         for c, v in enumerate(data):
-            data[c] = v.split(',')
+            data[c] = v.split(",")
 
         try:
             data = np.asarray(data, dtype=np.float64)
@@ -804,78 +895,115 @@ class EvolverNamespace(BaseNamespace):
 
     def custom_functions(self, data, vials, elapsed_time):
         # load user script from custom_script.py
-        if OPERATION_MODE == 'turbidostat':
+        if OPERATION_MODE == "turbidostat":
             custom_script.turbidostat(self, data, vials, elapsed_time)
-        elif OPERATION_MODE == 'chemostat':
+        elif OPERATION_MODE == "chemostat":
             custom_script.chemostat(self, data, vials, elapsed_time)
         else:
             # try to load the user function
             # if failing report to user
-            logger.info('user-defined operation mode %s' % OPERATION_MODE)
+            logger.info("user-defined operation mode %s" % OPERATION_MODE)
             try:
                 func = getattr(custom_script, OPERATION_MODE)
                 func(self, data, vials, elapsed_time)
             except AttributeError:
-                logger.error('could not find function %s in custom_script.py' %
-                            OPERATION_MODE)
-                print('Could not find function %s in custom_script.py '
-                    '- Skipping user defined functions'%
-                    OPERATION_MODE)
+                logger.error(
+                    "could not find function %s in custom_script.py" % OPERATION_MODE
+                )
+                print(
+                    "Could not find function %s in custom_script.py "
+                    "- Skipping user defined functions" % OPERATION_MODE
+                )
 
     def stop_exp(self):
         self.stop_all_pumps()
 
+
 def get_options():
-    description = 'Run an eVOLVER experiment from the command line'
+    description = "Run an eVOLVER experiment from the command line"
     parser = argparse.ArgumentParser(description=description)
 
-    parser.add_argument('-r', action = 'store_true', dest = 'restart_expt', default=False, help = "If entered, will restart the experiment if there is a file directory present")
+    parser.add_argument(
+        "-r",
+        action="store_true",
+        dest="restart_expt",
+        default=False,
+        help="If entered, will restart the experiment if there is a file directory present",
+    )
 
-    parser.add_argument('-n', action = 'store_true', dest = 'new_expt', default=False, help = "If enabled, start a new experiment. Use caution with this flag.")
+    parser.add_argument(
+        "-n",
+        action="store_true",
+        dest="new_expt",
+        default=False,
+        help="If enabled, start a new experiment. Use caution with this flag.",
+    )
 
-    parser.add_argument('-C', action = 'store_true', dest = 'conf_new_expt', default=False, help = "If enabled, will not ask to confirm the overwrite of the new directory. Use extreme caution with this flag.")
+    parser.add_argument(
+        "-C",
+        action="store_true",
+        dest="conf_new_expt",
+        default=False,
+        help="If enabled, will not ask to confirm the overwrite of the new directory. Use extreme caution with this flag.",
+    )
 
-    parser.add_argument('--emergency-restart', action = 'store_true', dest = 'emer_restart', default=False, help = "This should only be called via a bash script that restarts the experiment due to an unplanned restart that has stopped experiments mid-run.")
+    parser.add_argument(
+        "--emergency-restart",
+        action="store_true",
+        dest="emer_restart",
+        default=False,
+        help="This should only be called via a bash script that restarts the experiment due to an unplanned restart that has stopped experiments mid-run.",
+    )
 
-    parser.add_argument('--always-yes', action='store_true',
-                        default=False,
-                        help='Answer yes to all questions '
-                             '(i.e. continues from existing experiment, '
-                             'overwrites existing data and blanks OD '
-                             'measurements)')
-    parser.add_argument('--log-name',
-                        default=os.path.join(EXP_DIR, 'evolver.log'),
-                        help='Log file name directory (default: %(default)s)')
+    parser.add_argument(
+        "--always-yes",
+        action="store_true",
+        default=False,
+        help="Answer yes to all questions "
+        "(i.e. continues from existing experiment, "
+        "overwrites existing data and blanks OD "
+        "measurements)",
+    )
+    parser.add_argument(
+        "--log-name",
+        default=os.path.join(EXP_DIR, "evolver.log"),
+        help="Log file name directory (default: %(default)s)",
+    )
 
     log_nolog = parser.add_mutually_exclusive_group()
-    log_nolog.add_argument('--verbose', action='count',
-                           default=0,
-                           help='Increase logging verbosity level to DEBUG '
-                                '(default: INFO)')
-    log_nolog.add_argument('--quiet', action='store_true',
-                           default=False,
-                           help='Disable logging to file entirely')
+    log_nolog.add_argument(
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase logging verbosity level to DEBUG (default: INFO)",
+    )
+    log_nolog.add_argument(
+        "--quiet",
+        action="store_true",
+        default=False,
+        help="Disable logging to file entirely",
+    )
 
     return parser.parse_args()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     options = get_options()
 
-    #changes terminal tab title in OSX
-    term_title = ('\x1B]0;%s\x07'%(EXP_NAME))
+    # changes terminal tab title in OSX
+    term_title = "\x1b]0;%s\x07" % (EXP_NAME)
     print(term_title)
 
     # silence logging until experiment is initialized
     logging.level = logging.CRITICAL + 10
 
     socketIO = SocketIO(EVOLVER_IP, EVOLVER_PORT)
-    EVOLVER_NS = socketIO.define(EvolverNamespace, '/dpu-evolver')
+    EVOLVER_NS = socketIO.define(EvolverNamespace, "/dpu-evolver")
 
     # start by stopping any existing chemostat
     EVOLVER_NS.stop_all_pumps()
     #
-    EVOLVER_NS.start_time = EVOLVER_NS.initialize_exp(VIALS,
-                                                      options.always_yes)
+    EVOLVER_NS.start_time = EVOLVER_NS.initialize_exp(VIALS, options.always_yes)
 
     # logging setup
     if options.quiet:
@@ -885,11 +1013,12 @@ if __name__ == '__main__':
             level = logging.INFO
         elif options.verbose >= 1:
             level = logging.DEBUG
-        logging.basicConfig(format='%(asctime)s - %(name)s - [%(levelname)s] '
-                            '- %(message)s',
-                            datefmt='%Y-%m-%d %H:%M:%S',
-                            filename=options.log_name,
-                            level=level)
+        logging.basicConfig(
+            format="%(asctime)s - %(name)s - [%(levelname)s] - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            filename=options.log_name,
+            level=level,
+        )
 
     reset_connection_timer = time.time()
     while True:
@@ -900,41 +1029,44 @@ if __name__ == '__main__':
                 # reset connection to avoid buildup of broadcast
                 # messages (unlikely but could happen for very long
                 # experiments with slow dpu code/computer)
-                logger.info('resetting connection to eVOLVER to avoid '
-                            'potential buildup of broadcast messages')
+                logger.info(
+                    "resetting connection to eVOLVER to avoid "
+                    "potential buildup of broadcast messages"
+                )
                 socketIO.disconnect()
                 socketIO.connect()
                 reset_connection_timer = time.time()
         except KeyboardInterrupt:
             try:
-                print('Ctrl-C detected, pausing experiment')
-                logger.warning('interrupt received, pausing experiment')
+                print("Ctrl-C detected, pausing experiment")
+                logger.warning("interrupt received, pausing experiment")
                 EVOLVER_NS.stop_exp()
                 # stop receiving broadcasts
                 socketIO.disconnect()
                 while True:
-                    key = input('Experiment paused. Press enter key to restart '
-                                ' or hit Ctrl-C again to terminate experiment')
-                    logger.warning('resuming experiment')
+                    key = input(
+                        "Experiment paused. Press enter key to restart "
+                        " or hit Ctrl-C again to terminate experiment"
+                    )
+                    logger.warning("resuming experiment")
                     # no need to have something like "restart_chemo" here
                     # with the new server logic
                     socketIO.connect()
                     break
             except KeyboardInterrupt:
-                print('Second Ctrl-C detected, shutting down')
-                logger.warning('second interrupt received, terminating '
-                                'experiment')
+                print("Second Ctrl-C detected, shutting down")
+                logger.warning("second interrupt received, terminating experiment")
                 EVOLVER_NS.stop_exp()
-                print('Experiment stopped, goodbye!')
-                logger.warning('experiment stopped, goodbye!')
+                print("Experiment stopped, goodbye!")
+                logger.warning("experiment stopped, goodbye!")
                 break
         except Exception as e:
-            logger.critical('exception %s stopped the experiment' % str(e))
+            logger.critical("exception %s stopped the experiment" % str(e))
             print('error "%s" stopped the experiment' % str(e))
             traceback.print_exc(file=sys.stdout)
             EVOLVER_NS.stop_exp()
-            print('Experiment stopped, goodbye!')
-            logger.warning('experiment stopped, goodbye!')
+            print("Experiment stopped, goodbye!")
+            logger.warning("experiment stopped, goodbye!")
             break
 
     # stop experiment one last time
