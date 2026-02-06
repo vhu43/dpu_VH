@@ -25,21 +25,23 @@ class Linear(fit.Fit):
     _LATEX_STRING = "a + bx"
 
     @classmethod
-    def equation(cls, x, a, b):
+    def equation(cls, x, *params):
         """Returns the result of the equation of the model"""
+        a, b = params
         return a + b * np.array(x)
 
     @classmethod
-    def inverse(cls, y, a, b):
+    def inverse(cls, y, *params):
         """Returns the result of the inverse equation of the model"""
+        a, b = params
         return (np.array(y) - a) / b
 
     @classmethod
-    def grad(cls, x, a, b):
+    def grad(cls, x, *params):
         """Returns the gradient of the log equation"""
         x = np.array(x)
 
-        del a, b
+        del params
         del_a = np.ones(x.shape)
         del_b = x
         return np.stack([del_a, del_b]).reshape(cls._NUM_PARAMS, 1, -1)
@@ -53,5 +55,5 @@ class Linear(fit.Fit):
     @classmethod
     def get_initial_values(cls, x, y):
         """Returns initial guess for parameters"""
-        slope = (np.max(y) - np.min(y)) / (np.max(x) - np.min(y))
+        slope = (np.max(y) - np.min(y)) / (np.max(x) - np.min(x))
         return (0, slope)

@@ -25,18 +25,21 @@ class Log(fit.Fit):
     _LATEX_STRING = r"a\ log(b(x-c))"
 
     @classmethod
-    def equation(cls, x, a, b, c):
+    def equation(cls, x, *params):
         """Returns the result of the equation of the model"""
+        a, b, c = params
         return a * np.log(b * (np.array(x) - c))
 
     @classmethod
-    def inverse(cls, y, a, b, c):
+    def inverse(cls, y, *params):
         """Returns the result of the inverse equation of the model"""
+        a, b, c = params
         return np.exp(np.array(y) / a) / b + c
 
     @classmethod
-    def grad(cls, x, a, b, c):
+    def grad(cls, x, *params):
         """Returns the gradient of the log equation"""
+        a, b, c = params
         x = np.array(x)
 
         del_a = np.log(b * (x - c))

@@ -25,24 +25,26 @@ class Exp(fit.Fit):
     _LATEX_STRING = r"a e^{bx}"
 
     @classmethod
-    def equation(cls, x, a, b):
+    def equation(cls, x, *params):
         """Returns a equation to be used for fitting"""
+        a, b = params
         return a * np.exp(b * x)
 
     @classmethod
-    def inverse(cls, y, a, b):
+    def inverse(cls, y, *params):
         """Returns a equation to be used for fitting"""
+        a, b = params
         return np.log(y / a) / b
 
     @classmethod
-    def grad(cls, x, a, b):
+    def grad(cls, x, *params):
         """Returns the gradient of the log equation"""
+        a, b = params
+
         x = np.array(x)
-
-        exp = a * np.exp(b * np.array(x))
-
-        del_a = np.ones(x.shape)
-        del_b = exp * b
+        exp_term = np.exp(b * x)
+        del_a = exp_term
+        del_b = a * x * exp_term
         return np.stack([del_a, del_b]).reshape(cls._NUM_PARAMS, 1, -1)
 
     @classmethod

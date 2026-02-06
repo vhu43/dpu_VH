@@ -50,17 +50,17 @@ class Fit(ABC):
 
     @classmethod
     @abstractmethod
-    def equation(cls, x):
+    def equation(cls, x, *params):
         raise NotImplementedError("Subclasses should implement the fit equation")
 
     @classmethod
     @abstractmethod
-    def inverse(cls, y):
+    def inverse(cls, y, *params):
         raise NotImplementedError("Subclass should implement inversion for runtime")
 
     @classmethod
     @abstractmethod
-    def grad(cls, x):
+    def grad(cls, x, *params):
         raise NotImplementedError("Subclass should implement gradient for stats")
 
     @classmethod

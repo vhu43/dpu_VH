@@ -25,28 +25,28 @@ class Sigmoid(fit.Fit):
     _LATEX_STRING = r"a + \frac{b}{1 + e^{(dx-c)}}"
 
     @classmethod
-    def equation(cls, x, a, b, c, d):
+    def equation(cls, x, *params):
         """Returns a equation to be used for fitting"""
+        a, b, c, d = params
         return a + b / (1 + np.exp(d * np.array(x) - c))
 
     @classmethod
-    def inverse(cls, y, a, b, c, d):
+    def inverse(cls, y, *params):
         """Returns a equation to be used for fitting"""
+        a, b, c, d = params
         return (np.log(b / (np.array(y) - a) - 1) + c) / d
 
     @classmethod
-    def grad(cls, x, a, b, c, d):
+    def grad(cls, x, *params):
         """Returns the gradient of the log equation"""
+        a, b, c, d = params
         del a
-
         x = np.array(x)
-
         exp = np.exp(d * np.array(x) - c)
-
         del_a = np.ones(x.shape)
         del_b = 1 / (1 + exp)
         del_c = (b * exp) / ((1 + exp) ** 2)
-        del_d = (b * x * exp) / ((1 + exp) ** 2)
+        del_d = -(b * x * exp) / ((1 + exp) ** 2)
         return np.stack([del_a, del_b, del_c, del_d]).reshape(cls._NUM_PARAMS, 1, -1)
 
     @classmethod

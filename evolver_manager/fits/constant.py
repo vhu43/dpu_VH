@@ -26,20 +26,21 @@ class Constant(fit.Fit):
     _LATEX_STRING = "a"
 
     @classmethod
-    def equation(cls, x, a):
+    def equation(cls, x, *params):
+        a = params
         """Returns the result of the equation of the model"""
         return a * np.ones(np.array(x).shape)
 
     @classmethod
-    def inverse(cls, y, a):
+    def inverse(cls, y, *params):
+        a = params
         """Returns the result of the inverse equation of the model"""
         return np.ones(np.array(y).shape) / a
 
     @classmethod
-    def grad(cls, x, a):
-        """Returns the gradient of the log equation"""
-        del a
-        del_a = np.zeros(x.shape)
+    def grad(cls, x, *params):
+        x = np.array(x)
+        del_a = np.ones(x.shape)  # Derivative with respect to 'a' is 1
         return np.stack([del_a]).reshape(cls._NUM_PARAMS, 1, -1)
 
     @classmethod
@@ -52,4 +53,4 @@ class Constant(fit.Fit):
     def get_initial_values(cls, x, y):
         """Returns initial guess for parameters"""
         del x, y
-        return 0
+        return (0,)
