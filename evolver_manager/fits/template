@@ -23,14 +23,14 @@ class Template(fit.Fit):
   _LATEX_STRING = "" # Specify a latex-compatible encoding for pretty printing
 
   @classmethod
-  def equation(cls, x, a): # Add variables for parameters. Specify model eq here
+  def equation(cls, x, *params): # Add variables for parameters. Specify model eq here
     """Returns the result of the equation of the model"""
     del a # Use this to delete parameters that you don"t use
     x = np.array(x) # Keep this line
     raise NotImplementedError("Subclasses should implement the fit equation")
 
   @classmethod
-  def inverse(cls, y, a): # Specify inverse eq here
+  def inverse(cls, y, *params): # Specify inverse eq here
     """Returns the result of the inverse equation of the model"""
     del a # Use this to delete parameters that you don"t use
     y = np.array(y) # Keep this line
@@ -38,8 +38,8 @@ class Template(fit.Fit):
     raise NotImplementedError("Subclass should implement inversion for runtime")
 
   @classmethod
-  def grad(cls, x, a): # Specify partial derivatives here
-    """Returns the gradient of the log equation"""
+  def grad(cls, x, *params): # Specify partial derivatives here
+    """Returns the gradient of the fit equation"""
     x = np.array(x) # Keep this line
     del_a = a #Input the partial derivatives here. Add more variables if needed
     return np.stack([del_a]).reshape(cls._NUM_PARAMS, 1, -1)
