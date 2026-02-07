@@ -2,7 +2,7 @@
 
 from typing import Iterable
 
-import controller
+from . import controller
 import numpy as np
 
 
@@ -25,7 +25,7 @@ class PID(controller.Controller):
 
     def __init__(
         self,
-        parameters: Iterable[float, float, float, float],
+        parameters: Iterable[float],
         setpoint: float,
         rate: float,
     ):

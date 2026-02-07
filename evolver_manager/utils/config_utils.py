@@ -342,6 +342,11 @@ def get_calibration(
     sio.disconnect()
     sio.eio.disconnect(True)
 
+    if active_calibrations is None:
+        raise ConnectionError(
+            f"Failed to retrieve calibrations from evolver at {url}"
+        )
+
     for field in to_get:
         calibrations[field] = active_calibrations[field]
     return calibrations

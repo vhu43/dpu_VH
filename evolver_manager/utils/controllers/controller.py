@@ -18,6 +18,6 @@ class Controller(ABC):
         self._rate = rate
 
     @abstractmethod
-    def get_response(self, error):
+    def get_response(self, value: float):
         """A method that returns the result of a value"""
         raise NotImplementedError("Subclasses should implement this")

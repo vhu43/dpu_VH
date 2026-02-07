@@ -89,6 +89,7 @@ class EvolverControls(socketio.ClientNamespace):
                 self._recurrent_commands[pump][vial] = value
                 vials.add(vial)
         self.stop_pumps(list(vials))
+        self.dispatch_queues()
         return
 
     def unlock(self):
@@ -105,6 +106,7 @@ class EvolverControls(socketio.ClientNamespace):
 
         dilution_cmd = [self._paused_dilutions[pump] for pump in self._PUMP_SET]
         self.fluid_command(vials=vials, *dilution_cmd)
+        self.dispatch_queues()
         self._locked = False
 
     @classmethod
@@ -332,9 +334,9 @@ class EvolverControls(socketio.ClientNamespace):
 
             pump_settings[vial] = (bolus_vol, in1_bolus_s, in2_bolus_s, out_bolus_s)
 
-            in1_cmd.append(str(bolus_vol * in1_frac))
-            in2_cmd.append(str(bolus_vol * in2_frac))
-            out_cmd.append(str(bolus_vol + self._OUTFLOW_EXTRA))
+            in1_cmd.append(str(in1_bolus_s))
+            in2_cmd.append(str(in2_bolus_s))
+            out_cmd.append(str(out_bolus_s))
         # Otherwise, compute commands to be sent on next pumptime
         if self._locked:
             for pump, vals in zip(self._PUMP_SET, [in1_cmd, in2_cmd, out_cmd]):
@@ -410,9 +412,9 @@ class EvolverControls(socketio.ClientNamespace):
             bolus_sec_set = (in1_sec, in2_sec, out_sec, period)
             pump_settings[vial] = bolus_sec_set
 
-            in1_cmd.append(f"{in1_frac * bolus}|{period}")
-            in2_cmd.append(f"{in2_frac * bolus}|{period}")
-            out_cmd.append(f"{bolus + self._OUTFLOW_EXTRA}|{period}")
+            in1_cmd.append(f"{in1_sec}|{period}")
+            in2_cmd.append(f"{in2_sec}|{period}")
+            out_cmd.append(f"{out_sec}|{period}")
 
         if self._locked:
             for pump, vals in zip(self._PUMP_SET, [in1_cmd, in2_cmd, out_cmd]):
@@ -452,13 +454,17 @@ class EvolverControls(socketio.ClientNamespace):
         return self._timestamp
 
     @property
-    def response_received(self):
-        """read-only access to if the response from a previous command was received.
+    def awaiting_response(self):
+        """Access to whether we are waiting for a response from the evolver.
 
         TODO: Not generalizable for multiple asynchronous commands. Fine because
         only one command has a response element, but should be extended
         """
         return self._awaiting_response
+
+    @awaiting_response.setter
+    def awaiting_response(self, value: bool):
+        self._awaiting_response = value
 
     @property
     def active_calibrations(self):
@@ -680,7 +686,7 @@ class EvolverControls(socketio.ClientNamespace):
 
         data = {
             "param": "od_led",
-            "value": led_powers,
+            "value": adjustment,
             "immediate": immediate,
             "recurring": True,
         }
@@ -692,94 +698,3 @@ class EvolverControls(socketio.ClientNamespace):
 
         self.emit("command", data)
 
-    def fluid_command(
-        self,
-        vials: Iterable[int],
-        in1: Iterable[str] = None,
-        in2: Iterable[str] = None,
-        out: Iterable[str] = None,
-        recurring: bool = False,
-        immediate: bool = False,
-    ):
-        """Method to adjust pump settings
-
-        Arguments:
-          vials: the vials to change
-          in1: the values for in1
-          in2: the values for in2
-          out: the values for out
-          immediate: if the command should be done immediately
-        """
-        message = {
-            "fields_expected_incoming": 49,
-            "fields_expected_outgoing": 49,
-            "recurring": recurring,
-            "immediate": immediate,
-            "value": ["--"] * 3 * self.num_vials_total,
-            "param": "pump",
-        }
-        if recurring:
-            recurring_string = "recurring"
-        else:
-            recurring_string = ""
-
-        pump_sets = [in1, in2, out]
-        for idx, pump_set in enumerate(pump_sets):
-            if pump_set is None:
-                continue
-            for vial, pump_val in zip(vials, pump_set):
-                if pump_val is None:
-                    continue
-                message["value"][vial + idx * self.num_vials_total] = pump_val
-
-            self.logger.debug(
-                "sending %spump command to %s for vials %s to pump for %s respectively",
-                recurring_string,
-                f"pumpset {self._PUMP_SET[idx]}",
-                ", ".join([str(v) for v in vials]),
-                ", ".join(pump_set),
-            )
-        self.emit("command", message)
-
-    def stop_pumps(
-        self, vials: Iterable[int], in1: bool = True, in2: bool = True, out: bool = True
-    ):  # DONE
-        """Method to stop pumps for certain vials
-
-        Arguments:
-          vials: the vials to stop pumps for
-          in1: A boolean value which is True if we should shut off the in1 set
-          in2: A boolean value which is True if we should shut off the in2 set
-          out: A boolean value which is True if we should shut off the out set
-        """
-        message = {
-            "fields_expected_incoming": 49,
-            "fields_expected_outgoing": 49,
-            "param": "pump",
-            "value": ["__"] * 48,
-            "recurring": False,
-            "immediate": True,
-        }
-        stopped = []
-        for idx, pumpset in enumerate((in1, in2, out)):
-            for vial in vials:
-                if pumpset:
-                    message["value"][vial + idx * self.num_vials_total] = "0"
-                    stopped.append(self._PUMP_SET[idx])
-
-        # Logging and sending command
-        stopped = ", ".join(stopped)
-        stopped_vials = ", ".join([str(v) for v in vials])
-        self.logger.info("stopping %s pumps for vials %s", stopped, stopped_vials)
-        self.emit("command", message)
-
-    def stop_all_pumps(self):  # Done
-        """Method to stop all pumps"""
-        data = {
-            "param": "pump",
-            "value": ["0"] * 48,
-            "recurring": False,
-            "immediate": True,
-        }
-        self.logger.info("stopping all pumps")
-        self.emit("command", data)

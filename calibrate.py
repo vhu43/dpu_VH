@@ -140,6 +140,9 @@ def main(sio: socketio.Client):
             parser.print_help()
             sys.exit(2)
         calibration = controls.get_calibration_by_name(cal_name)
+        if calibration is None:
+            print(f"Error: Failed to retrieve calibration '{cal_name}'")
+            return -1
         params = params.strip().split(",")
 
     if cal_name is not None and not get_names:

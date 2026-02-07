@@ -47,7 +47,10 @@ def get_options():
         help="The directory the runtime log files are written to",
     )
     parser.add_argument(
-        "-d", "--detatch", action="store_true", default=False,
+        "-d",
+        "--detatch",
+        action="store_true",
+        default=False,
         help="Detach from stdout",
     )
     return parser.parse_args()

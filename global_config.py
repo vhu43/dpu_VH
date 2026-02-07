@@ -4,10 +4,7 @@ log_dir = "/home/liusynevolab/Logs"
 
 fluid_alert_threshold = "500"
 
-CONFIG_FILENAMES = [
-  "config.yaml",
-  "config.yml"
-]
+CONFIG_FILENAMES = ["config.yaml", "config.yml"]
 
 # An ordered list of evolvers. Each evolvers represent a set of vials
 evolvers = [

@@ -172,8 +172,8 @@ class Daemon:
             # Try to send error back if connection is still open
             try:
                 await self.send_msg(writer, {"status": "error", "msg": str(e)})
-            except:
-                pass
+            except Exception:
+                self.logger.debug("Failed to send error response to client", exc_info=True)
         finally:
             writer.close()
 
@@ -209,10 +209,14 @@ class Daemon:
         start = time.time()
         while self._alive:
             # Only keep a experiment to start for a certain amount of time
-            for name, values in self._to_start.items():
-                if time.time() > values["window"]:
-                    del self._to_start[name]
-                    self.logger.error("Took too long to find %s. Deleting", name)
+            expired = [
+                name
+                for name, values in self._to_start.items()
+                if time.time() > values["window"]
+            ]
+            for name in expired:
+                del self._to_start[name]
+                self.logger.error("Took too long to find %s. Deleting", name)
 
             # Deleting Unknown files
             for file in self._temp_dir.iterdir():
@@ -265,10 +269,14 @@ class Daemon:
                 del self._fluid_key[vial]
 
             # Clean up fluid Lists
-            for fluid_name, vial_set in self._vial_key.items():
-                if len(vial_set) == 0:
-                    del self._vial_key[fluid_name]
-                    del self._fluids[fluid_name]
+            empty_fluids = [
+                fluid_name
+                for fluid_name, vial_set in self._vial_key.items()
+                if len(vial_set) == 0
+            ]
+            for fluid_name in empty_fluids:
+                del self._vial_key[fluid_name]
+                del self._fluids[fluid_name]
             print(f"Updating experiment list {self.waited_cycles}, {self._alive}")
             await asyncio.sleep(max(self.DEFAULT_PAUSE - time.time() + start, 0))
             start = time.time()

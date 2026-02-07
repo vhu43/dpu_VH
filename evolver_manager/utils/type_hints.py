@@ -46,18 +46,16 @@ class ExperimentalParams(TypedDict):
     temp: ParamDict
 
 
-class DataEntry(TypedDict):
-    """Broadcast data dictionary type hint."""
+class DataDict(TypedDict):
+    """Broadcast data dictionary type hint.
+
+    Keyed by param names from server conf.yml (od_90, od_135, temp, etc.).
+    Each value is a list of 16 raw sensor readings (one per vial).
+    """
 
     od_90: List
     od_135: List
-    temperature: List
-
-
-class DataDict(TypedDict):
-    """Broadcast dictionary type hint."""
-
-    data: DataEntry
+    temp: List
 
 
 class Broadcast(TypedDict):
@@ -79,9 +77,9 @@ class Record(TypedDict):
 class ChemostatRecord(Record):
     """Record object to record changes to chemorates."""
 
-  IN1: Tuple[float, float]
-  IN2: Tuple[float, float]
-  OUT: Tuple[float, float]
+    IN1: Tuple[float, float]
+    IN2: Tuple[float, float]
+    OUT: Tuple[float, float]
 
 
 class TurbidostatRecord(Record):

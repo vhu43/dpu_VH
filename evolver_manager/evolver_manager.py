@@ -60,10 +60,10 @@ class EvolverManager(socketio.ClientNamespace):
         # 1. Start fresh for this tick
         self.controls.reset_queues()
         # Get raw data
-        raw = broadcast["data"]["data"]
+        raw = broadcast["data"]
         dpu_time = time.time()
         raw_data = {}
-        for data_type in ["od_90", "od_135", "temperature"]:
+        for data_type in ["od_90", "od_135", "temp"]:
             raw_data[data_type] = raw.get(data_type, None)
 
         # Updating reactor states and writing data values to working directories
@@ -72,7 +72,7 @@ class EvolverManager(socketio.ClientNamespace):
                 # Update the reactor logic
                 update_msg = reactor.update(broadcast, dpu_time)
                 # Writing raw data
-                for data_type in ["od_90", "od_135", "temperature"]:
+                for data_type in ["od_90", "od_135", "temp"]:
                     if raw_data[data_type]:
                         for vial, od in zip(reactor.vials, reactor.od_readings):
                             # Writing fitted OD

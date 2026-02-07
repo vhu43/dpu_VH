@@ -300,16 +300,19 @@ class Bioreactor(ABC):
         od_data = []
         temp_data = []
         for od_sensor in self._od_sensors:
-            od_data.append(data["data"].get(od_sensor, None))
+            sensor_data = data.get(od_sensor, None)
+            if sensor_data is None:
+                self.logger.error("Missing OD sensor data for %s", od_sensor)
+                return None
+            od_data.append(sensor_data)
         for temp_sensor in self._temp_sensors:
-            temp_data.append(data["data"].get(temp_sensor, None))
+            sensor_data = data.get(temp_sensor, None)
+            if sensor_data is None:
+                self.logger.error("Missing temp sensor data for %s", temp_sensor)
+                return None
+            temp_data.append(sensor_data)
         od_data = np.array(od_data)
         temp_data = np.array(temp_data)
-
-        if od_data is None or temp_data is None:
-            print("Incomplete data recieved, Error with measurement")
-            self.logger.error("Incomplete data received, error with measurements")
-            return None
 
         # Get OD and Temp Readings from raw data and print to logger
         od_readings = []
@@ -364,7 +367,10 @@ class Bioreactor(ABC):
         records: list[type_hints.Record] = []
 
         # Record OD readings
-        od_readings, temp_readings = self.process_data(broadcast["data"])
+        result = self.process_data(broadcast["data"])
+        if result is None:
+            return False, None
+        od_readings, temp_readings = result
         for vial, od, temp in zip(self.vials, od_readings, temp_readings):
             self.od_history[vial].append(od)
             self.temp_history[vial].append(temp)
