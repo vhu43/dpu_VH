@@ -126,6 +126,7 @@ def main(sio: socketio.Client):
         )
         return 0
 
+    calibration = None
     if cal_name:
         if fit_name is None:
             print("Please input a name for the fit!")
@@ -153,13 +154,14 @@ def main(sio: socketio.Client):
         data_dir = Path("Calibration_data")
         if update_cal == "y":
             fig_file = Path(data_dir, f"{fit_name}_{fit_type}_fit_plot")
-            fig.savefig(fig_file)
+            if fig is not None:
+                fig.savefig(fig_file)
 
             calibration_utils.log_calibration(raw, data_dir, fit_name, params)
             with open("Calibration_list.csv", "a", encoding="utf8") as f:
                 f.write(", ".join((fit_name, "[" + "".join(params) + "]", fit_type)))
                 f.write("\n")
-    controls.push_calibration_fit(cal_name, fit)
+            controls.push_calibration_fit(cal_name, fit)
 
 
 if __name__ == "__main__":

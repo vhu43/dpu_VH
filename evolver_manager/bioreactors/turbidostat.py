@@ -1,6 +1,7 @@
 """class to handle Turbidostat"""
 
 import dataclasses
+from typing import Any
 
 import numpy as np
 
@@ -74,7 +75,7 @@ class Turbidostat(bioreactor.Bioreactor):
         name: str,
         evolver: evolver_controls.EvolverControls,
         settings: TurbidostatSettings,
-        calibrations: type_hints.Calibration = None,
+        calibrations: type_hints.Calibration | None = None,
         manager: str = __name__,
     ):
         """Initializes the instance using common parameters for all runs
@@ -127,7 +128,7 @@ class Turbidostat(bioreactor.Bioreactor):
 
     def update(
         self, broadcast: type_hints.Broadcast, curr_time: float
-    ) -> type_hints.UpdateMsg:
+    ) -> dict[str, Any]:
         """A method to update Turbidostat action on broadcast events.
 
         This method first obtains OD data using pre_update(). Aftewards, it checks
@@ -140,7 +141,7 @@ class Turbidostat(bioreactor.Bioreactor):
           broadcast: a broadcast from the evolver
           curr_time: the elapsed time for the experiment
         """
-        update_msg: type_hints.UpdateMsg = {
+        update_msg: dict[str, Any] = {
             "time": broadcast["timestamp"],
             "record": None,
             "vials": self.vials,
@@ -215,7 +216,7 @@ class Turbidostat(bioreactor.Bioreactor):
             lowers,
             self.dil_steps,
             ratios,
-            fits,
+            tuple(fits),
             volumes,
         )
         # Store command change
@@ -223,9 +224,10 @@ class Turbidostat(bioreactor.Bioreactor):
             bolus_vol, in1_bolus_s, in2_bolus_s, out_bolus_s = settings
             record: type_hints.TurbidostatRecord = {
                 "vial": vial,
-                "in1": in1_bolus_s,
-                "in2": in2_bolus_s,
-                "out": out_bolus_s,
+                "command": "dilution",
+                "IN1": in1_bolus_s,
+                "IN2": in2_bolus_s,
+                "OUT": out_bolus_s,
             }
             records.append(record)
             self.logger.info(
@@ -237,3 +239,4 @@ class Turbidostat(bioreactor.Bioreactor):
         self._evolver.stop_pumps(vials_to_stop)
         update_msg["time"] = curr_time
         update_msg["record"] = tuple(records)
+        return update_msg

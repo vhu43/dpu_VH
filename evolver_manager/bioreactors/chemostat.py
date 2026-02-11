@@ -1,6 +1,7 @@
 """class to handle chemostat"""
 
 import dataclasses
+from typing import Any
 
 import numpy as np
 
@@ -71,7 +72,7 @@ class Chemostat(bioreactor.Bioreactor):
         name: str,
         evolver: evolver_controls.EvolverControls,
         settings: ChemostatSettings,
-        calibrations: type_hints.Calibration = None,
+        calibrations: type_hints.Calibration | None = None,
         manager: str = __name__,
     ):
         """Initializes the instance using common parameters for all runs
@@ -142,7 +143,7 @@ class Chemostat(bioreactor.Bioreactor):
 
     def update(
         self, broadcast: type_hints.Broadcast, curr_time: float
-    ) -> type_hints.UpdateMsg:
+    ) -> dict[str, Any]:
         """A method to update chemostat action on broadcast events
 
         Defines how bioreactor handles new data coming in. After pre-update steps
@@ -154,7 +155,7 @@ class Chemostat(bioreactor.Bioreactor):
         """
         start, records = self.pre_update(broadcast=broadcast, curr_time=curr_time)
 
-        update_msg: type_hints.UpdateMsg = {
+        update_msg: dict[str, Any] = {
             "time": float("nan"),
             "record": None,
             "vials": self.vials,
@@ -209,7 +210,7 @@ class Chemostat(bioreactor.Bioreactor):
         active_volumes = [self.volumes[v] for v in vials_to_adjust]
 
         pump_settings = self._evolver.dilute_repeat(
-            vials_to_adjust, ratios, boluses, rates, fits, active_volumes
+            tuple(vials_to_adjust), tuple(ratios), tuple(boluses), tuple(rates), tuple(fits), tuple(active_volumes)
         )
         for vial, pump_commands in pump_settings.items():
             in1_v, in2_v, out_v, period = pump_commands

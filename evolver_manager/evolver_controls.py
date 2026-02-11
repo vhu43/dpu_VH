@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Iterable, List, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, List, Tuple
 
 import numpy as np
 import socketio
@@ -37,24 +37,26 @@ class EvolverControls(socketio.ClientNamespace):
 
     def __init__(
         self,
-        namespace: str = None,
-        caller: str = None,
+        namespace: str | None = None,
+        caller: str | None = None,
         num_vials_total=global_config.NUM_VIALS_DEFAULT,
     ):
         super().__init__(namespace)
-        self._logger: logging.Logger = logging.Logger(caller)
+        self._logger: logging.Logger = logging.Logger(caller or __name__)
         self._awaiting_response: bool = False
 
         self._num_vials_total = num_vials_total
 
         # Evolver data
         self._timestamp: float = 0
-        self._data: type_hints.Broadcast = None
-        self._power: Tuple[int] = ()
-        self._stir_rate: Tuple[int] = ()
-        self._temp_setpoint: Tuple[int] = ()
-        self._active_calibrations: type_hints.SensorCal = None
+        self._broadcast: type_hints.Broadcast | None = None
+        self._data: type_hints.DataDict | None = None
+        self._power: tuple[int | str, ...] = ()
+        self._stir_rate: tuple[int | str, ...] = ()
+        self._temp_setpoint: tuple[int | str, ...] = ()
+        self._active_calibrations: type_hints.Calibration | None = None
         self._calibration_names = None
+        self.calibration: Any = None
 
         # For pausing if need to refill media
         self._locked = False
@@ -79,7 +81,9 @@ class EvolverControls(socketio.ClientNamespace):
         if self._locked:
             return
         self._locked = True
-        pump_vals = self._data["config"]["pump"]["value"]
+        if self._broadcast is None:
+            return
+        pump_vals = self._broadcast["config"]["pump"]["value"]
         vials = set()
         for i, value in enumerate(pump_vals):
             if hasattr(value, "__iter__") and "|" in value:
@@ -232,9 +236,9 @@ class EvolverControls(socketio.ClientNamespace):
     def fluid_command(
         self,
         vials: Iterable[int],
-        in1: Iterable[str] = None,
-        in2: Iterable[str] = None,
-        out: Iterable[str] = None,
+        in1: Iterable[str] | None = None,
+        in2: Iterable[str] | None = None,
+        out: Iterable[str] | None = None,
         recurring: bool = False,
         immediate: bool = False,
     ):
@@ -291,13 +295,13 @@ class EvolverControls(socketio.ClientNamespace):
 
     def dilute_single(
         self,
-        vials: Iterable,
-        current_ods: Iterable,
-        starting_ods: Iterable,
-        target_ods: Iterable,
+        vials: Iterable[int],
+        current_ods: Iterable[float],
+        starting_ods: Iterable[float],
+        target_ods: Iterable[float],
         steps: int,
-        ratios: Iterable,
-        fits_list: tuple[bioreactor.FitSet],
+        ratios: Iterable[tuple[float, ...]],
+        fits_list: tuple[bioreactor.FitSet, ...],
         volumes: Iterable[float],
     ):
         # If locked, pause the pushing of fluid commands
@@ -348,13 +352,13 @@ class EvolverControls(socketio.ClientNamespace):
 
     def dilute_repeat(
         self,
-        vials: tuple[int],
-        ratios: tuple[float],
-        bolus_volumes: tuple[float],
-        rates: tuple[float],
-        fits: tuple[bioreactor.FitSet],
-        total_volumes: tuple[float],
-    ) -> dict[int, tuple]:
+        vials: tuple[int, ...],
+        ratios: tuple[float, ...],
+        bolus_volumes: tuple[float, ...],
+        rates: tuple[float, ...],
+        fits: tuple[bioreactor.FitSet, ...],
+        total_volumes: tuple[float, ...],
+    ) -> dict[int, tuple[float, ...]]:
         """Calculate a valid recurrent pump setting for the evolver given parameters
 
         Method to compute pump settings for the chemostat. Performs rudimentary
@@ -503,6 +507,7 @@ class EvolverControls(socketio.ClientNamespace):
         self._power = tuple(broadcast["config"]["lxml"]["value"])
         self._temp_setpoint = tuple(broadcast["config"]["temp"]["value"])
         self._stir_rate = tuple(broadcast["config"]["stir"]["value"])
+        self._broadcast = broadcast
         self._data = broadcast["data"]
         self._timestamp = time.time()
 
@@ -512,7 +517,7 @@ class EvolverControls(socketio.ClientNamespace):
     def on_activecalibrations(self, calibrations: List[type_hints.SensorCal]):
 
         # Obtain data from active calibrations and create fit objects
-        self._active_calibrations: type_hints.Calibration = {
+        active_cals: dict[str, dict[str, Any] | None] = {
             "od": None,
             "temp": None,
             "pump": None,
@@ -525,9 +530,12 @@ class EvolverControls(socketio.ClientNamespace):
                     fit_type = "temp"
                 case "pump":
                     fit_type = "pump"
+                case _:
+                    continue
             for fit_data in calibration["fits"]:
                 if fit_data["active"]:
-                    self._active_calibrations[fit_type] = fit_data
+                    active_cals[fit_type] = fit_data
+        self._active_calibrations = active_cals  # pyright: ignore[reportAttributeAccessIssue]
         self._awaiting_response = False
 
     def on_calibration(self, data):
@@ -624,7 +632,7 @@ class EvolverControls(socketio.ClientNamespace):
           stir_rates: the signal value for the pwm for the stir rate.
           immediate: if the command should be done immediately
         """
-        adjustment = ["NaN"] * self.num_vials_total
+        adjustment: list[str | int] = ["NaN"] * self.num_vials_total
         for vial, stir_rate in zip(vials, stir_rates):
             adjustment[vial] = stir_rate
 
@@ -652,7 +660,7 @@ class EvolverControls(socketio.ClientNamespace):
           temperatures: the signal value for the thermocouple to match. NOT CELCIUS
           immediate: if the command should be done immediately
         """
-        adjustment = ["NaN"] * self.num_vials_total
+        adjustment: list[str | int] = ["NaN"] * self.num_vials_total
         for vial, temperature in zip(vials, temperatures):
             adjustment[vial] = temperature
 
@@ -680,7 +688,7 @@ class EvolverControls(socketio.ClientNamespace):
           led_powers: the signal value LED voltage (element in [0-4095])
           immediate: if the command should be done immediately
         """
-        adjustment = ["NaN"] * self.num_vials_total
+        adjustment: list[str | int] = ["NaN"] * self.num_vials_total
         for vial, temperature in zip(vials, led_powers):
             adjustment[vial] = temperature
 

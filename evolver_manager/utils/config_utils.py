@@ -13,6 +13,7 @@ import json
 import time
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import socketio
 
@@ -29,7 +30,7 @@ EVOLVER_NAMESPACE = "/dpu-evolver"
 
 
 def check_vials_and_modes(
-    config: dict, use_global_vials=True, extra_vials_ok=True
+    config: dict[str, Any], use_global_vials=True, extra_vials_ok=True
 ) -> tuple[dict[str, tuple[int]], tuple[int]]:
     """Helper function to check vial and modes validity.
 
@@ -117,13 +118,13 @@ def check_vials_and_modes(
 
 
 def check_settings(
-    in_dict: dict,
-    reactor,
-    vials,
-    fields: Iterable,
-    tuple_fields: Iterable,
-    alias: dict = None,
-) -> dict[str, dict]:
+    in_dict: dict[str, Any],
+    reactor: str,
+    vials: tuple[int, ...],
+    fields: Iterable[str],
+    tuple_fields: Iterable[str],
+    alias: dict[str, str] | None = None,
+) -> dict[str, Any]:
     """Helper function to check special settings for configuration"""
     if alias is None:
         alias = {}
@@ -146,7 +147,7 @@ def check_settings(
             settings[setting] = field_value
             continue
 
-        if not isinstance(field_value, Iterable) or isinstance(field_value, str):
+        if not isinstance(field_value, (list, tuple)) or isinstance(field_value, str):
             settings[setting] = tuple([field_value] * num_vials)
         elif len(field_value) == 1:
             settings[setting] = tuple(field_value * num_vials)
@@ -160,7 +161,7 @@ def check_settings(
                 subset.append(configurations[vial])
             settings[setting] = tuple(subset)
 
-    num_fields = len((fields))
+    num_fields = len(list(fields))
 
     if len(settings) != num_fields:
         raise ValueError(
@@ -170,13 +171,13 @@ def check_settings(
     return settings
 
 
-def add_fluid_tracking(config: dict, reactors: dict[str, tuple[int, ...]]):
+def add_fluid_tracking(config: dict[str, Any], reactors: dict[str, tuple[int, ...]]):
     """Buidling fluid tracking dictionaries to send to the evolver."""
     if "fluids" not in config or config["fluids"] == "None":
         return {}, {}
 
-    fluid_key = {}
-    starting_vol = {"alert": ["email@domain.com"], "fluids": {}}
+    fluid_key: dict[str, Any] = {}
+    starting_vol: dict[str, Any] = {"alert": ["email@domain.com"], "fluids": {}}
     reactor_key = {}
 
     if "receiver_email" in config and config["receiver_email"] != "None":
@@ -202,7 +203,7 @@ def add_fluid_tracking(config: dict, reactors: dict[str, tuple[int, ...]]):
     return fluid_key, starting_vol
 
 
-def encode_start(name, working_directory, config):
+def encode_start(name: str, working_directory: Path, config: dict[str, Any]):
     """Build a set of command to send to the evolver daemon
 
     returns:
@@ -264,7 +265,7 @@ def encode_start(name, working_directory, config):
 def build_reactor(
     name: str,
     mode: str,
-    configurations: dict,
+    configurations: dict[str, Any],
     controls: evolver_controls.EvolverControls,
     caller: str,
 ) -> bioreactor.Bioreactor:
@@ -291,7 +292,7 @@ def build_reactor(
     return reactor
 
 
-def dict_to_dataclass(field_dict: dict, cls_obj, fields: Iterable[str] = None):
+def dict_to_dataclass(field_dict: dict[str, Any], cls_obj: Any, fields: Iterable[str] | None = None) -> Any:
     if fields is None:
         fields = {f.name for f in dataclasses.fields(cls_obj) if f.init}
     valid_args = {k: v for k, v in field_dict.items() if k in fields}
@@ -299,8 +300,8 @@ def dict_to_dataclass(field_dict: dict, cls_obj, fields: Iterable[str] = None):
 
 
 def get_calibration(
-    working_directory: Path, config: dict, url: str, timeout: float = TIMEOUT
-) -> type_hints.Calibration:
+    working_directory: Path, config: dict[str, Any], url: str, timeout: float = TIMEOUT
+) -> dict[str, Any]:
     """Helper function to obtain calibrations from config and evolver.
 
     A helper functiont to obtain calibrations. If the calibration files exist

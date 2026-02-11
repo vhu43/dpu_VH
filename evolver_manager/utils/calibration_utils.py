@@ -37,6 +37,7 @@ def fit_curve(calibration, model_name, fit_name, sensors):
     coefficients = []
     p_cov_list = []
     p_err_list = []
+    fig = None
 
     for _, data in calibration_data.items():
         for vial_num, vial in enumerate(range(data["vial_num"])):
@@ -230,7 +231,7 @@ def graph(curve, y, x, coef, p_cov_list, fit_name, alpha=0.05, n=10000):
         edgecolor="1",
     )
     plt.subplots_adjust(hspace=0.4, wspace=0.2)
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     plt.show(block=False)
     return fig
 

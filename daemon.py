@@ -13,6 +13,7 @@ import tempfile
 import time
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import socketio
 import yaml
@@ -76,13 +77,13 @@ class Daemon:
         self._fluid_key: dict[int, dict[str, str]] = {}
         self._vial_key: dict[str, set[int]] = {}
         self._fluids: dict[str, float] = {}
-        self._recurrent: dict[int, dict[str, list[float]]] = {}
+        self._recurrent: dict[str, list[float]] = {}
         self._needs_refill = set()
         self._fluid_custodians = {}
 
         ## Constructing asynchronous listener for commands, but does not make server
         self.server_coroutine = asyncio.start_server(self.handle_client, ip, port)
-        self._server: asyncio.Server = None
+        self._server: asyncio.Server | None = None
 
     async def main_job(self):
         # Start up server
@@ -374,8 +375,9 @@ class Daemon:
 
     def dettach_evolver(self, manager: evolver_manager.EvolverManager):
         """Helper function to detach an evolver"""
-        manager.client.disconnect()
-        manager.client.eio.disconnect()
+        if manager.client is not None:
+            manager.client.disconnect()
+            manager.client.eio.disconnect()
 
     def send_email(
         self,
@@ -385,7 +387,7 @@ class Daemon:
     ):
         """Send an email message using the daemon's email address."""
         context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(smtp_server, port, context) as server:
+        with smtplib.SMTP_SSL(smtp_server, port, context=context) as server:
             server.login(global_config.SENDER_EMAIL, global_config.EMAIL_PASSWORD)
             server.send_message(email_msg)
         self.logger.info("Sent an email to %s regarding ")
@@ -394,17 +396,17 @@ class Daemon:
         """Helper function to pause evolver commands"""
         for _, manager in self.evolvers.items():
             manager.controls.lock()
-        self._paused = True
+        self._pause = True
 
     async def unpause(self):
         for _, manager in self.evolvers.items():
             manager.controls.unlock()
-        self._paused = False
+        self._pause = False
 
     # Methods to talk to the Daemon
 
     @classmethod
-    def push_to_daemon(cls, name: str, to_write: Iterable, data_dir: Path):
+    def push_to_daemon(cls, name: str, to_write: Iterable[Any], data_dir: Path):
         """A helper function to atomically write a experiment initialization file.
 
         A helper function to atomically write an experiment initialization file.
@@ -424,7 +426,7 @@ class Daemon:
 
     # Commands to handle talking to daemon
 
-    async def send_msg(self, writer: asyncio.StreamWriter, data: dict):
+    async def send_msg(self, writer: asyncio.StreamWriter, data: dict[str, Any]):
         """Sends a dictionary as a length-prefixed JSON string."""
         msg_bytes = json.dumps(data).encode("utf-8")
         # Pack the length of the message into 4 bytes (Big Endian Unsigned Int)
@@ -432,7 +434,7 @@ class Daemon:
         writer.write(header + msg_bytes)
         await writer.drain()
 
-    async def recv_msg(self, reader: asyncio.StreamReader) -> dict:
+    async def recv_msg(self, reader: asyncio.StreamReader) -> dict[str, Any] | None:
         """Receives a length-prefixed JSON string."""
         try:
             # 4-byte header for length
@@ -517,7 +519,7 @@ class Daemon:
             print(f"Error changing pause status: {response.get('msg')}")
 
     @classmethod
-    def command_refill(cls, ip, port, fluids: dict, wait_time=300, timeout=10):
+    def command_refill(cls, ip, port, fluids: dict[str, Any], wait_time=300, timeout=10):
         """Command to pause the evolver, send a fluid refill, then unpause"""
         # 1. Pause
         cls._change_pause_status(ip, port, pause=True, timeout=timeout)

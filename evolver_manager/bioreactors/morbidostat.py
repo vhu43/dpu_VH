@@ -3,6 +3,7 @@
 import collections
 import dataclasses
 from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 from scipy import optimize
@@ -34,8 +35,9 @@ class MorbidostatSettings:
         vials = self.base_settings.vials
         self.lower_thresh = tuple(self.lower_thresh)
         self.upper_thresh = tuple(self.upper_thresh)
-        self.rate = tuple(self.rate)
-        self.drug_limits = tuple(self.drug_limits)
+        self.control_rate = tuple(self.control_rate)
+        self.drug_low = tuple(self.drug_low)
+        self.drug_high = tuple(self.drug_high)
         self.drug_source = tuple(self.drug_source)
 
         invalid_settings = False
@@ -102,7 +104,7 @@ class Morbidostat(bioreactor.Bioreactor):
         name: str,
         evolver: evolver_controls.EvolverControls,
         settings: MorbidostatSettings,
-        calibrations: type_hints.Calibration = None,
+        calibrations: type_hints.Calibration | None = None,
         manager: str = __name__,
     ):
         """Initializes the instance using common parameters for all runs
@@ -119,16 +121,9 @@ class Morbidostat(bioreactor.Bioreactor):
         self._morbidostat_settings = settings
 
         # Turbidostat-type dilution control using two possible states
-        self._diluting: dict[
-            int,
-            tuple[
-                float,
-                tuple[float, tuple[float, float], str, bioreactor.FitSet],
-                tuple[float, float],
-            ],
-        ] = {}
+        self._diluting: dict[int, Any] = {}
 
-        self._bolus_volume = self.volume / self.control_rate
+        self._bolus_volume = tuple(v / cr for v, cr in zip(self.volumes, self.control_rate))
 
         # Parameters needed for pump
         self._last_dilution: dict[int, float] = {}
@@ -136,8 +131,8 @@ class Morbidostat(bioreactor.Bioreactor):
         # Parameters needed for drug ratio calculation
         self._past_growth_rate: dict[int, collections.deque[float]] = {}
         self._offset: dict[int, float] = {}
-        self._drug_log: dict[int, collections.deque[float]]
-        self._od_filtered: dict[int, list[float]]
+        self._drug_log: dict[int, collections.deque[float]] = {}
+        self._od_filtered: dict[int, collections.deque[Any]] = {}
 
         self._time_data = collections.deque(maxlen=self.mem_len)
         for vial in self.vials:
@@ -163,7 +158,7 @@ class Morbidostat(bioreactor.Bioreactor):
 
     @property
     def drug_limits(self):
-        return self._morbidostat_settings.drug_limits
+        return tuple(zip(self._morbidostat_settings.drug_low, self._morbidostat_settings.drug_high))
 
     @property
     def controllers(self):
@@ -175,9 +170,9 @@ class Morbidostat(bioreactor.Bioreactor):
 
     def update(
         self, broadcast: type_hints.Broadcast, curr_time: float
-    ) -> type_hints.UpdateMsg:
+    ) -> dict[str, Any]:
 
-        update_msg: type_hints.UpdateMsg = {
+        update_msg: dict[str, Any] = {
             "time": float("nan"),
             "record": None,
             "vials": self.vials,
@@ -189,7 +184,7 @@ class Morbidostat(bioreactor.Bioreactor):
         start, records = self.pre_update(broadcast=broadcast, curr_time=curr_time)
 
         self._time_data.append(broadcast["timestamp"])
-        self._sampling_period = np.average(np.diff(self._time_data))
+        self._sampling_period = float(np.average(np.diff(self._time_data)))
         # Adjust sampling period
 
         if not start:
@@ -211,28 +206,30 @@ class Morbidostat(bioreactor.Bioreactor):
         for vial, control_params, dilution_params in morbidostat_params:
             past_data = self.od_history[vial]
 
-            od_filtered = self._od_filter * past_data
-            self._od_filtered[vial].append(od_filtered)
+            od_filtered = self._od_filter * past_data  # type: ignore[operator]
+            self._od_filtered[vial].append(od_filtered)  # type: ignore[arg-type]
 
             # Check to see if we should adjust controller
-            if curr_time - self._last_dilution[vial] > (1 / self.control_rate):
+            vial_idx = self.vials.index(vial)
+            if curr_time - self._last_dilution[vial] > (1 / self.control_rate[vial_idx]):
                 drug, response = self.get_drug_concentration(vial)
                 _, drug_source, *_ = control_params
                 if drug_source.lower() != "temp":
-                    self._diluting[vial] = tuple(
-                        (drug, control_params, dilution_params)
-                    )
+                    self._diluting[vial] = (drug, control_params, dilution_params)
                     command = "pump"
                 else:
                     change_temp.append((vial, drug, control_params))
                     command = "temp"
 
-                record = type_hints.MorbidostatRecord(
-                    vial=vial,
-                    command=command,
-                    growth_rate=self._past_growth_rate[vial][-1],
-                    response=response,
-                )
+                record: type_hints.MorbidostatRecord = {
+                    "vial": vial,
+                    "command": command,
+                    "IN1": 0.0,
+                    "IN2": 0.0,
+                    "OUT": 0.0,
+                    "growth_rate": self._past_growth_rate[vial][-1],
+                    "response": response,
+                }
                 records.append(record)
 
             # Check to make sure things don't need diluting
@@ -243,8 +240,8 @@ class Morbidostat(bioreactor.Bioreactor):
         out_to_adjust = []
         pump_vials = []
 
-        for vial, drug, params in self._diluting.items():
-            control_params, dilution_params = params
+        for vial, diluting_val in self._diluting.items():
+            drug, control_params, dilution_params = diluting_val
 
             average_od = np.average(self.od_history[vial])
             lower, upper = dilution_params
@@ -254,8 +251,9 @@ class Morbidostat(bioreactor.Bioreactor):
 
             # Get the volume needed to approach od target
             drug_limits, _, drug_source, fits = control_params
+            vial_volume = self.volumes[self.vials.index(vial)]
             bolus_volume = self.compute_bolus_volume(
-                average_od, upper, lower, self.volume, self._SERIAL_DILUTIONS
+                float(average_od), upper, lower, vial_volume, self._SERIAL_DILUTIONS
             )
 
             # Calculate the ratio needed to adjust drug concentration
@@ -276,7 +274,7 @@ class Morbidostat(bioreactor.Bioreactor):
         temp_settings = []
         temp_temperatures = []
         for vial, drug, control_params in change_temp:
-            drug_limits, *_ = control_params
+            drug_limits, _, _, fits = control_params  # type: ignore[assignment]
             temp_setting, temp = self.compute_heater_val(drug, drug_limits, fits)
             temp_vials.append(vial)
             temp_settings.append(temp_setting)
@@ -285,7 +283,8 @@ class Morbidostat(bioreactor.Bioreactor):
         self.modify_temp_setpoint(temp_vials, temp_temperatures)
         self._evolver.update_temperature(temp_vials, temp_settings, immediate=True)
 
-        update_msg["record"] = record
+        update_msg["record"] = tuple(records)
+        return update_msg
 
     ### TODO Add pump command and heater change in setpoint
 
@@ -330,7 +329,7 @@ class Morbidostat(bioreactor.Bioreactor):
         self, drug: float, drug_limits: tuple[float, float], temp_fit: bioreactor.FitSet
     ) -> tuple[int, float]:
         """Function to compute heater specification after pid controller input"""
-        drug = drug * -np.diff(drug_limits) + drug_limits[0]
+        drug = float(drug * -np.diff(drug_limits) + drug_limits[0])
         sensor_val = temp_fit.temp_fit.get_inverse(drug)
         return int(round(sensor_val, 0)), drug
 
@@ -352,8 +351,8 @@ class Morbidostat(bioreactor.Bioreactor):
         bolus_volume: float,
         pump_fits: bioreactor.FitSet,
     ) -> tuple[float, float, float]:
-        drug = drug / np.sum(drug_limits)
-        idx = self._evolver.PUMP_SET.index(drug_pump.upper())
+        drug = float(drug / np.sum(drug_limits))
+        idx = self._evolver._PUMP_SET.index(drug_pump.upper())
         pump_vals = [
             bolus_volume / pump_fits.in1.get_val(0),
             bolus_volume / pump_fits.in2.get_val(0),
@@ -391,19 +390,19 @@ class Morbidostat(bioreactor.Bioreactor):
         last_growth_rate = self._past_growth_rate[vial][-1]
         self._past_growth_rate[vial].append(growth_rate)
         if len(self._past_growth_rate[vial]) > self._GR_FILTER_SIZE:
-            past_gr = self._past_growth_rate[vial][-self._GR_FILTER_SIZE - 1 :]
-            last_growth_rate = self._gr_filter * past_gr[:-1] / self._gr_denom
-            growth_rate = self._gr_filter * past_gr[1:] / self._gr_denom
+            past_gr = list(self._past_growth_rate[vial])[-self._GR_FILTER_SIZE - 1 :]
+            last_growth_rate = self._gr_filter * np.array(past_gr[:-1]) / self._gr_denom  # type: ignore[assignment]
+            growth_rate = self._gr_filter * np.array(past_gr[1:]) / self._gr_denom  # type: ignore[assignment]
 
-        response = self.controllers[vial].get_response(growth_rate)
+        response = self.controllers[vial].get_response(float(growth_rate))
 
         setpoint = self.controllers[vial].setpoint
 
-        if growth_rate < setpoint and last_growth_rate > setpoint:
+        if growth_rate < setpoint and last_growth_rate > setpoint:  # type: ignore[operator]
             if len(self._drug_log[vial]) == self._DRUG_LOG_SIZE:
-                self._offset[vial] = np.average(
-                    self._drug_log[vial][-self._DRUG_LOG_SIZE // 2 :]
-                )
+                self._offset[vial] = float(np.average(
+                    list(self._drug_log[vial])[-self._DRUG_LOG_SIZE // 2 :]
+                ))
             else:
                 self._offset[vial] = self._drug_log[vial][-1]
         drug = self._offset[vial] + response

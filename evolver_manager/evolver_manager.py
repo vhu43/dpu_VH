@@ -96,7 +96,7 @@ class EvolverManager(socketio.ClientNamespace):
         self.controls.dispatch_queues()
         return
 
-    def add_experiment(self, name: str, reactor: dict, working_directory: Path):
+    def add_experiment(self, name: str, reactor: bioreactor.Bioreactor, working_directory: Path):
         self.logger.info("Adding experiment")
         if name not in self._active_reactors:
             self._active_reactors[name] = []

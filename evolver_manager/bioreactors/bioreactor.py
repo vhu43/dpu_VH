@@ -6,6 +6,7 @@ import importlib
 import logging
 import time
 from abc import ABC, abstractmethod
+from typing import Any
 
 import numpy as np
 
@@ -52,6 +53,7 @@ class ReactorSettings:
     # Run conditions
     start_delay: tuple[float, ...] = dataclasses.field(default_factory=tuple)
     durations: tuple[float, ...] = dataclasses.field(default_factory=tuple)
+    duration: tuple[float, ...] = dataclasses.field(default_factory=tuple, init=False)
 
     def __post_init__(self):
         """Checking values to ensure that it is correctly formatted"""
@@ -128,7 +130,7 @@ class Bioreactor(ABC):
         name: str,
         evolver: evolver_controls.EvolverControls,
         settings: ReactorSettings,
-        calibrations: type_hints.Calibration = None,
+        calibrations: type_hints.Calibration | None = None,
         manager: str = __name__,
     ):
         """Initializes the instance using common parameters for all runs
@@ -147,12 +149,14 @@ class Bioreactor(ABC):
             logging.getLogger(manager), {"name": self._name}
         )
 
+        if calibrations is None:
+            raise ValueError("Calibrations are required to initialize a Bioreactor")
         self._od_sensors = calibrations["od"]["params"]
         self._temp_sensors = calibrations["temp"]["params"]
         self._data_fits: tuple[FitSet, ...] = self._format_cal(calibrations)
 
-        self._past_od_readings: dict[int, collections.deque] = {}
-        self._past_temp_readings: dict[int, collections.deque] = {}
+        self._past_od_readings: dict[int, collections.deque[float]] = {}
+        self._past_temp_readings: dict[int, collections.deque[float]] = {}
         self._num_readings: int = 0
         for vial in self.vials:
             self._past_od_readings[vial] = collections.deque(maxlen=self.mem_len)
@@ -182,15 +186,15 @@ class Bioreactor(ABC):
           A tuple of named-tuples containing the calibrations. The named tuple is of
           the names: vial, od_fit, temp_fit, in1, in2, out
         """
-        od_fits = []
-        temp_fits = []
+        od_fits: list[fit.Fit] = []
+        temp_fits: list[fit.Fit] = []
 
-        in1 = []
-        in2 = []
-        out = []
+        in1: list[fit.Fit] = []
+        in2: list[fit.Fit] = []
+        out: list[fit.Fit] = []
         pump_cal = [in1, in2, out]
 
-        to_process: list[tuple[list, type_hints.SensorCal]] = []
+        to_process: list[tuple[list[fit.Fit], Any]] = []
 
         # Obtaining fits from calibrations argument
         to_process.append((od_fits, calibrations["od"]))
@@ -200,7 +204,7 @@ class Bioreactor(ABC):
         shift = 0
         pump_base = calibrations["pump"]
         for item in pump_cal:
-            pump_set_cal: type_hints.SensorCal = {
+            pump_set_cal: dict[str, Any] = {
                 "name": pump_base.get("name", "pump"),
                 "type": pump_base.get("type", "linear"),
                 "timeFit": pump_base.get("timeFit", 0.0),
@@ -282,7 +286,7 @@ class Bioreactor(ABC):
 
     def process_data(
         self, data: type_hints.DataDict
-    ) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    ) -> tuple[tuple[float, ...], tuple[float, ...]] | None:
         """Basic method to process evolver data
 
         Robust data processing to obtain measurement of OD and Temperature from
@@ -318,11 +322,12 @@ class Bioreactor(ABC):
         od_readings = []
         temp_readings = []
 
-        od_fit: fit.Fit
-        temp_fit: fit.Fit
-        for vial, od_fit, temp_fit, *_ in self._data_fits:
+        for fit_set in self._data_fits:
+            vial = fit_set.vial
+            od_fit = fit_set.od_fit
+            temp_fit = fit_set.temp_fit
             try:
-                od_reading = od_fit.get_val(od_data[:, vial])[0]
+                od_reading = od_fit.get_val(od_data[:, vial])[0]  # pyright: ignore[reportIndexIssue]
                 if not np.isfinite(od_reading):
                     od_reading = np.nan
                     self.logger.error(f"OD from vial {vial} read as infinite")
@@ -334,15 +339,15 @@ class Bioreactor(ABC):
                 od_reading = np.nan
 
             try:
-                temp_reading = temp_fit.get_val(od_data[:, vial])[0]
+                temp_reading = temp_fit.get_val(temp_data[:, vial])[0]  # pyright: ignore[reportIndexIssue]
             except ValueError:
                 self.logger.error(
                     f"temperature read error for vial {vial}, setting to NaN"
                 )
                 temp_reading = np.nan
 
-        od_readings.append(od_reading)
-        temp_readings.append(temp_reading)
+            od_readings.append(od_reading)
+            temp_readings.append(temp_reading)
 
         return tuple(od_readings), tuple(temp_readings)
 
@@ -369,7 +374,7 @@ class Bioreactor(ABC):
         # Record OD readings
         result = self.process_data(broadcast["data"])
         if result is None:
-            return False, None
+            return False, []
         od_readings, temp_readings = result
         for vial, od, temp in zip(self.vials, od_readings, temp_readings):
             self.od_history[vial].append(od)
@@ -380,7 +385,7 @@ class Bioreactor(ABC):
         # Check if any vial is past their start time
         if curr_time < min(self.start_times):
             self._logger.debug("Not at start time yet")
-            return False, None
+            return False, []
 
         # Stop any vials that no longer need updating
         to_stop: list[int] = []
@@ -395,7 +400,7 @@ class Bioreactor(ABC):
     @abstractmethod
     def update(
         self, broadcast: type_hints.Broadcast, curr_time: float
-    ) -> type_hints.UpdateMsg:
+    ) -> dict[str, Any]:
         raise NotImplementedError("sublcasses should impelemnt this")
 
     @classmethod

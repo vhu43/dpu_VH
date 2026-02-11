@@ -4,7 +4,9 @@ THESE ARE NOT MEANT TO BE INITIALIZED. These are just references to get type
 hints for various dictionaries passed around by the classes.
 """
 
-from typing import List, Tuple, TypedDict
+from __future__ import annotations
+
+from typing import Any, List, Tuple, TypedDict
 
 ### Classes that handle evolver broadcasts and datatypes
 
@@ -13,11 +15,13 @@ class SensorCal(TypedDict):
     """Sensor calibration dictionary type hint."""
 
     name: str
-    coefficients: List
+    coefficients: List[list[float]]
     type: str
     timeFit: float
     active: bool
-    params: List
+    params: List[str]
+    calibrationType: str
+    fits: list[dict[str, Any]]
 
 
 class Calibration(TypedDict):
@@ -34,7 +38,7 @@ class ParamDict(TypedDict):
     fields_expected_incoming: int
     fields_expected_outgoing: int
     recurring: bool
-    value: List
+    value: List[str]
 
 
 class ExperimentalParams(TypedDict):
@@ -53,9 +57,9 @@ class DataDict(TypedDict):
     Each value is a list of 16 raw sensor readings (one per vial).
     """
 
-    od_90: List
-    od_135: List
-    temp: List
+    od_90: List[str]
+    od_135: List[str]
+    temp: List[str]
 
 
 class Broadcast(TypedDict):
@@ -104,7 +108,7 @@ class UpdateMsg(TypedDict):
     """Return result of update methods."""
 
     time: float
-    record: Tuple[Record, ...]
+    record: Tuple[Record, ...] | None
     vials: Tuple[int, ...]
     od: Tuple[float, ...]
     temp: Tuple[float, ...]

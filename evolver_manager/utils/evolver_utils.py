@@ -1,10 +1,12 @@
 """A modeule for utility functions for calculations related to evolver inputs"""
 
+from typing import Any
+
 import numpy as np
 from scipy import special
 
 
-def causal_differentiator_coefs(n: int) -> np.ndarray:
+def causal_differentiator_coefs(n: int) -> np.ndarray[Any, np.dtype[np.float64]]:
     """Returns coefficients for a noise-robust causul differentiator for N points.
 
   Implements a causal differentiator by returning a tuple of of coefficients to
@@ -33,7 +35,7 @@ def causal_differentiator_coefs(n: int) -> np.ndarray:
     return coefs
 
 
-def causal_smoother_coefs(n: int) -> np.ndarray:
+def causal_smoother_coefs(n: int) -> np.ndarray[Any, np.dtype[np.float64]]:
     """Returns coefficients for a noise-robust smoother for N points.
 
   Implements a causal smoother by returning a tuple of of coefficients to

@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 import socketio
+import socketio.exceptions
 import yaml
 
 import daemon
@@ -73,6 +74,7 @@ def main():
     daemon_p = subprocess.Popen(daemon_cmd, stdout=subprocess.PIPE, **kwargs)
 
     # Wait briefly for daemon to initialize
+    assert daemon_p.stdout is not None
     start_wait = time.time()
     while daemon_p.poll() is None:
         if time.time() - start_wait > 2.0:  # Don't hang forever
@@ -80,7 +82,7 @@ def main():
         data = daemon_p.stdout.readline()
         if not data:
             continue
-        line = data.decode("utf-8").rstrip()
+        line = data.decode("utf-8").rstrip() if isinstance(data, bytes) else data.rstrip()
         if line == "\U00000004":  # EOT
             break
         print(f"  {line}")
@@ -101,7 +103,7 @@ def main():
         commands, modes, fluids = config_utils.encode_start(
             name, working_directory, config
         )
-    except socketio.exceptions.ConnectionError as inst:
+    except socketio.exceptions.ConnectionError as inst:  # type: ignore[attr-defined]
         print("\nUnable to connect to the evolver to obtain calibration:")
         print(f"\t{inst.args[0]}")
         return -1
@@ -267,8 +269,8 @@ def rm_r(path: Path):
 
 if __name__ == "__main__":
     # Ensure log dir exists for daemon
-    LOG_DIR = Path("logs")
-    LOG_DIR.mkdir(exist_ok=True)
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
 
     exitcode = main()
     sys.exit(exitcode)
